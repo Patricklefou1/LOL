@@ -5,6 +5,7 @@ Recherche, documentation et outillage autour du trading sur Pump.fun (Solana).
 ## Code
 
 - **[capture/](capture/)** — **Phase 1 en TypeScript** : capture en continu du programme Pump.fun via Triton Yellowstone gRPC vers ClickHouse (créations, trades, graduations, slots, transactions brutes rejouables, détection de trous, monitoring). Voir [capture/README.md](capture/README.md) pour la mise en route.
+- **[pumpfun-guide-pas-a-pas.md](pumpfun-guide-pas-a-pas.md)** — **Runbook de déploiement** : les 12 étapes ordonnées du VPS OVH nu à la capture en service permanent (Triton, sécurisation, Node, ClickHouse, clone, .env, migration, premier lancement, systemd, surveillance 48 h, validation), avec vérifications et remèdes aux pannes courantes à chaque étape.
 
 ## Documentation
 
