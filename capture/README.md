@@ -71,6 +71,72 @@ FROM pumpfun.trades ORDER BY received_at DESC LIMIT 10;
 
 Critères : zéro gap non expliqué, < 0,1 % d'écart sur l'échantillon réconcilié, `lag_ms_p99` stable, `decode_miss_total` proche de zéro (les instructions du programme qui n'émettent pas d'événement — création de comptes, etc. — peuvent en produire un peu : vérifier la nature des tx concernées via `raw_transactions` avant de s'alarmer).
 
+## Déploiement sur un VPS OVH
+
+OVHcloud n'offre pas de ClickHouse managé (leur offre « Public Cloud Databases » couvre PostgreSQL, MySQL, MongoDB, Kafka, OpenSearch…, pas ClickHouse). Ce n'est pas un problème : ClickHouse est open-source et s'auto-héberge très bien sur un VPS — c'est le montage prévu ici, capture et base sur la même machine.
+
+### 1. Choix du VPS
+
+- **Gabarit** : 4–8 vCPU, 16 Go de RAM, disque NVMe. ClickHouse est à l'aise à partir de 8 Go ; en dessous de 4 Go il souffre.
+- **Région** : choisis le datacenter OVH **le plus proche de ton endpoint Triton** et vérifie au ping (< 10–20 ms idéalement). Les validateurs Solana et les endpoints des fournisseurs sont concentrés en Europe (Amsterdam/Francfort) et aux US — un VPS OVH à Gravelines/Roubaix/Strasbourg convient bien pour un endpoint européen.
+- **Disque** : la table `raw_transactions` est le poste principal — ordre de grandeur de 1 à 3 Go/jour compressé ZSTD (dépend de l'activité de Pump.fun). Prévois 200 Go+ ou surveille ; les partitions journalières permettent de purger le brut ancien si besoin (`ALTER TABLE … DROP PARTITION`), les tables décodées restant petites.
+
+### 2. Installer ClickHouse (Ubuntu/Debian)
+
+```bash
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+curl -fsSL https://packages.clickhouse.com/gpg/clickhouse-key.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+sudo apt-get install -y clickhouse-server clickhouse-client   # définir le mot de passe de `default` quand demandé
+sudo systemctl enable --now clickhouse-server
+clickhouse-client --password   # sanity check : SELECT 1
+```
+
+Sécurité :
+- **Ne pas exposer ClickHouse sur Internet.** Par défaut il n'écoute que sur localhost — garde ça (la capture tourne sur la même machine). N'ajoute jamais `listen_host: 0.0.0.0` ; pour requêter depuis ton poste, passe par un tunnel SSH : `ssh -L 8123:localhost:8123 user@vps`.
+- Mets un mot de passe à l'utilisateur `default` (proposé à l'installation) et reporte-le dans `.env`.
+- Pare-feu minimal : `ufw allow ssh && ufw enable` (rien d'autre d'ouvert).
+
+### 3. Lancer la capture en service systemd
+
+```bash
+sudo useradd -r -m -s /usr/sbin/nologin pumpfun
+sudo mkdir -p /opt/pumpfun && sudo chown pumpfun /opt/pumpfun
+# en tant que pumpfun : cloner le repo dans /opt/pumpfun, puis
+cd /opt/pumpfun/LOL/capture && npm install && cp .env.example .env  # remplir .env
+npm run migrate && npm run build
+```
+
+`/etc/systemd/system/pumpfun-capture.service` :
+
+```ini
+[Unit]
+Description=Capture Pump.fun (Triton gRPC -> ClickHouse)
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+User=pumpfun
+WorkingDirectory=/opt/pumpfun/LOL/capture
+ExecStart=/usr/bin/env node dist/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pumpfun-capture
+journalctl -u pumpfun-capture -f    # suivre la ligne de santé toutes les 30 s
+```
+
+`Restart=always` + la reconnexion gRPC interne = la capture survit aux redémarrages du VPS, aux coupures réseau et aux incidents de l'endpoint. Les trous éventuels sont enregistrés dans `capture_gaps` pour la réconciliation de phase 2.
+
 ## Notes de conception
 
 - **L'horloge de référence est le slot**, pas l'horloge murale : toutes les études de la phase 4 se font en temps-slot (~400 ms), ce qui rend la recherche indépendante du jitter de réception.
