@@ -38,16 +38,26 @@ sudo ufw status   # attendu : OpenSSH ALLOW, rien d'autre
 
 ## Étape 3 — Le compte Triton et l'endpoint *(à lancer en premier — délai variable)*
 
-- [ ] **3.1** Va sur le site de Triton One et ouvre un compte / contacte-les pour un plan avec **Dragon's Mouth (Yellowstone gRPC)** sur **mainnet**, région Europe si ton VPS est en Europe.
-- [ ] **3.2** Récupère les deux informations dont le module a besoin :
-  - l'**URL de l'endpoint** (forme typique : `https://xxxx.rpcpool.com:443`),
-  - le **x-token** d'authentification.
-- [ ] **3.3** Depuis le VPS, vérifie la proximité réseau :
+- [ ] **3.1 Ouvrir le compte.** Sur le site de Triton One (triton.one / rpcpool.com) : inscription en ligne, ou contact commercial selon le plan. Ce qu'il faut demander/choisir, en trois critères :
+  - le produit : **Dragon's Mouth**, c'est leur nom pour le flux **Yellowstone gRPC** — c'est LE besoin, un plan RPC HTTP seul ne suffit pas ;
+  - le réseau : **Solana mainnet** ;
+  - la région : **Europe (Amsterdam ou Francfort)** si le VPS est en Europe — c'est là que se concentrent les validateurs.
+  Un plan **partagé** suffit largement pour démarrer (capture + shadow) ; le nœud dédié se justifiera plus tard, quand le PnL le paiera.
+- [ ] **3.2 Récupérer les identifiants** dans le dashboard une fois le compte actif. Correspondance exacte avec `capture/.env` :
+
+| Ce que donne Triton | Variable `.env` | Forme typique |
+|---|---|---|
+| URL de l'endpoint gRPC | `GRPC_ENDPOINT` | `https://xxxx.rpcpool.com:443` (garder le `https://` et le port 443) |
+| Token d'authentification (« x-token » / « auth token ») | `GRPC_X_TOKEN` | une chaîne opaque, à coller telle quelle |
+| URL RPC HTTP du même compte | `RPC_URL` | copier **l'URL exacte affichée par le dashboard** — selon les plans, le token y est déjà inclus dans le chemin (`https://xxxx.rpcpool.com/LE_TOKEN`) ou se passe en header ; dans le doute, coller l'URL complète donnée par le dashboard |
+
+- [ ] **3.3 Vérifier la proximité réseau** depuis le VPS :
 ```bash
 ping -c 5 xxxx.rpcpool.com   # idéalement < 10–20 ms
 ```
+Le vrai test de bout en bout (auth comprise) se fait à l'étape 9 — inutile d'installer un client gRPC pour tester avant.
 
-> **Plan B si Triton traîne** : le module utilise le protocole Yellowstone standard — n'importe quel fournisseur compatible (Helius LaserStream, Shyft, InstantNodes…) fonctionne avec le même code, seuls `GRPC_ENDPOINT` et `GRPC_X_TOKEN` changent. Tu peux démarrer la capture chez l'un et migrer chez Triton ensuite sans rien perdre.
+> **Plan B si Triton traîne** : le module utilise le protocole Yellowstone standard — n'importe quel fournisseur compatible fonctionne avec le même code, seuls `GRPC_ENDPOINT`, `GRPC_X_TOKEN` et `RPC_URL` changent. Le plus rapide à obtenir : **Helius** (inscription self-service, clé immédiate) — leur produit gRPC s'appelle **LaserStream** ; dans le dashboard, prendre l'URL LaserStream mainnet de ta région comme `GRPC_ENDPOINT` et ta clé API comme `GRPC_X_TOKEN`, plus leur URL RPC comme `RPC_URL`. Shyft propose aussi du gRPC self-service. Tu peux démarrer la capture chez l'un et migrer chez Triton ensuite **sans rien perdre ni changer au code** : mise à jour du `.env`, `systemctl restart pumpfun-capture`, et le trou de quelques secondes sera rebouché par `npm run reconcile`.
 
 ---
 
@@ -242,6 +252,40 @@ Exécuter les requêtes de la section « Vérifier la Definition of Done » de `
 - [ ] Taux de graduation observé cohérent (créations 24 h vs complétions 24 h : de l'ordre du pour-cent).
 
 **Quand ces quatre cases sont cochées, la Phase 1 est terminée.** Signale-le-moi et je construis la Phase 2 : le job de labellisation des issues (multiple max, mort, graduation, rug par token), le backfill Bitquery, et la réconciliation RPC des trous enregistrés dans `capture_gaps`.
+
+---
+
+## Annexe — Piloter les étapes 5 à 10 avec Claude Code installé sur le VPS
+
+Si Claude Code est installé sur le VPS, c'est lui qui déroule les étapes 5 à 10 — toi tu approuves et tu fournis les secrets. Mode d'emploi :
+
+**A.1 Toujours lancer dans tmux** (si la connexion SSH coupe, la session Claude survit) :
+```bash
+sudo apt-get install -y tmux
+tmux new -s deploy          # ouvre la session tmux
+# … travailler …
+# détacher sans tuer : Ctrl+B puis D ; se rattacher : tmux attach -t deploy
+```
+
+**A.2 Connexion (premier lancement uniquement)** :
+```bash
+cd /opt/pumpfun/LOL
+claude
+```
+Choisir la connexion par compte Claude : une **URL s'affiche dans le terminal** — l'ouvrir dans le navigateur du PC, s'authentifier avec le même compte, coller le code retourné dans le terminal du VPS.
+
+**A.3 Donner la mission** : coller le prompt de mission (celui fourni en conversation, ou reformuler : « lis pumpfun-guide-pas-a-pas.md et capture/README.md, déroule les étapes 5 à 10 en vérifiant chaque critère de réussite avant de passer à la suivante »).
+
+**A.4 Pendant l'exécution** :
+- Claude demande l'**approbation avant chaque commande** (`apt`, `systemctl`, écriture de fichiers) : lire, approuver. On peut accepter « pour la session » afin de réduire les demandes répétées sur les commandes sûres.
+- Au moment du `.env` (étape 7), il demandera l'endpoint, le x-token et le RPC_URL : les coller **dans le terminal du VPS** — ils ne vont que dans le `.env` local (`chmod 600`).
+- S'il signale `decode_miss_total` qui grimpe ou une erreur gRPC : le laisser diagnostiquer, puis rapporter le diagnostic dans la conversation principale (le décodeur se corrige côté dépôt, `git pull`, et le brut se re-décode — rien n'est perdu).
+
+**A.5 Quitter / reprendre** :
+- Quitter la session Claude : `Ctrl+D` (ou `/exit`). La capture, elle, tourne sous systemd — fermer Claude ne l'arrête pas.
+- Reprendre la même conversation plus tard, dans le même dossier : `claude --continue`.
+
+**A.6 État final attendu** : `systemctl status pumpfun-capture` → `active (running)`, lignes de santé JSON dans `journalctl -u pumpfun-capture -f` avec `tx_per_s > 0`, et le test de reboot passé.
 
 ---
 
