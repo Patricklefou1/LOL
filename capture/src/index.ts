@@ -1,5 +1,6 @@
 import bs58 from "bs58";
 import { config } from "./config";
+import { extractExecution } from "./decode/execution";
 import { decodePumpEvents, priceSol } from "./decode/pumpfun";
 import { PumpSubscriber } from "./grpc/subscriber";
 import { Health } from "./monitor/health";
@@ -38,7 +39,12 @@ async function main(): Promise<void> {
         const signature = bs58.encode(Buffer.from(info.signature ?? []));
         const isFailed = info.meta?.err ? 1 : 0;
 
-        if (config.captureRaw) {
+        if (isFailed) health.note("failed");
+
+        // Une transaction échouée n'a aucun événement à re-décoder plus tard :
+        // on la compte dans les coûts sans payer son archive brute (le poste
+        // disque n°1). CAPTURE_RAW_FAILED=1 pour l'archiver quand même.
+        if (config.captureRaw && (!isFailed || config.captureRawFailed)) {
           sink.push("raw_transactions", {
             slot,
             signature,
@@ -49,8 +55,10 @@ async function main(): Promise<void> {
         }
 
         let decoded = 0;
+        let mint = "";
         for (const ev of decodePumpEvents(info)) {
           decoded++;
+          if (!mint) mint = ev.mint;
           if (ev.kind === "trade") {
             health.note("trade");
             sink.push("trades", {
@@ -96,9 +104,63 @@ async function main(): Promise<void> {
             });
           }
         }
-        // Transaction du programme sans événement décodé : compté, pas perdu —
-        // la table raw permet de re-décoder après correction du décodeur.
-        if (decoded === 0 && !isFailed) health.note("decode_miss");
+        if (config.captureExecution) {
+          const exec = extractExecution(info);
+
+          // `decode_miss` ne compte que les transactions qui invoquent vraiment
+          // le programme : les autres n'ont, par construction, rien à décoder.
+          if (decoded === 0 && !isFailed && exec.invokedPump) health.note("decode_miss");
+          if (!exec.invokedPump) health.note("foreign");
+
+          // Le trafic étranger est mesuré (foreign_per_s) mais pas stocké : il ne
+          // dit rien de nos coûts et pèse un tiers du flux.
+          if (exec.invokedPump || config.captureCostsForeign) {
+          sink.push("tx_costs", {
+            slot,
+            signature,
+            received_at: receivedAt,
+            is_failed: isFailed,
+            err: exec.err,
+            err_raw: exec.errRaw,
+            failed_program: exec.failedProgram,
+            fee_payer: exec.feePayer,
+            fee_lamports: jsonU64(exec.feeLamports),
+            compute_units: exec.computeUnits,
+            cu_limit: exec.cuLimit,
+            cu_price_micro: jsonU64(exec.cuPriceMicro),
+            priority_fee_lamports: jsonU64(exec.priorityFeeLamports),
+            jito_tip_lamports: jsonU64(exec.jitoTipLamports),
+            invoked_pump: exec.invokedPump ? 1 : 0,
+            pump_instructions: exec.pumpInstructions,
+            mint,
+            n_instructions: exec.nInstructions,
+          });
+          }
+
+          // Les transferts d'une transaction échouée n'ont pas eu lieu : les
+          // enregistrer inventerait des arêtes dans le graphe de financement.
+          // Les frais, eux, sont bien payés — ils restent dans tx_costs.
+          if (!isFailed) {
+            for (const t of exec.transfers) {
+              health.note("transfer");
+              sink.push("sol_transfers", {
+                slot,
+                signature,
+                received_at: receivedAt,
+                ix_index: t.ixIndex,
+                from_wallet: t.from,
+                to_wallet: t.to,
+                lamports: jsonU64(t.lamports),
+                kind: t.kind,
+                is_jito_tip: t.isJitoTip ? 1 : 0,
+              });
+            }
+          }
+        } else if (decoded === 0 && !isFailed) {
+          // Transaction du programme sans événement décodé : compté, pas perdu —
+          // la table raw permet de re-décoder après correction du décodeur.
+          health.note("decode_miss");
+        }
       },
     },
   );

@@ -30,6 +30,19 @@ En production : lancer sous systemd/pm2 avec redémarrage automatique. Le proces
 | `slots` | Flux de slots — l'horloge on-chain, référence de temps de toute la recherche |
 | `raw_transactions` | Payload complet normalisé (bytes en base64, ZSTD) — **rejouable** si le décodeur évolue |
 | `capture_gaps` | Trous de slots détectés, à réconcilier par RPC en phase 2 |
+| `tx_costs` | Contexte d'exécution par transaction : frais, unités de calcul, priority fee, tip Jito, échec et code d'erreur décodé — le **modèle de coûts** mesuré sur le marché réel |
+| `sol_transfers` | Transferts SOL des instructions System (transactions réussies uniquement) — socle du **graphe de financement** : bundles, wallets snipers financés, tips |
+
+### Ce que `tx_costs` permet de mesurer
+
+On ne peut pas retrancher des coûts qu'on n'a jamais observés. Cette table donne, sur le marché réel : la distribution des priority fees payées par les autres, les tips Jito du moment (~1 % des transactions en portent un), et le taux d'échec par instruction.
+
+Deux résultats à connaître avant de lire les chiffres, tous deux liés au filtre `accountInclude` qui matche la *référence* au compte du programme, pas son invocation :
+
+- **~35 % du flux capturé n'invoque jamais Pump.fun** (`invoked_pump = 0`) — des bots tiers qui référencent le compte. Ils ne sont pas stockés par défaut (`CAPTURE_COSTS_FOREIGN=0`), seulement comptés dans `foreign_per_s`.
+- **~94 % des transactions capturées échouent**, mais c'est trompeur : l'écrasante majorité sont ces mêmes bots tiers qui ratent leurs propres gardes. Les vraies instructions Pump.fun échouent à **6–11 %** (`Buy` 8,1 %, `Sell` 6,4 %) — c'est ça, le coût de la course au slippage.
+
+Les transactions échouées paient leurs frais (elles restent dans `tx_costs`) mais ne déplacent aucun lamport : leurs transferts sont donc exclus de `sol_transfers`, sans quoi le graphe de financement contiendrait des arêtes qui n'ont jamais existé.
 
 Le décodage lit les événements Anchor via **event-CPI** (inner instructions du programme), avec repli sur les logs `Program data:` — les logs seuls sont tronqués sous charge. Les discriminators sont calculés à l'exécution (`sha256("event:<Nom>")[0..8]`), pas codés en dur. Les versions du programme qui ajoutent des champs en fin d'événement (creator, fees…) sont tolérées : le préfixe stable est parsé, le reste ignoré.
 

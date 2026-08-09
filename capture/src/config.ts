@@ -21,4 +21,10 @@ export const config = {
     database: env("CLICKHOUSE_DATABASE", "pumpfun"),
   },
   captureRaw: (process.env.CAPTURE_RAW ?? "1") !== "0",
+  // Les transactions échouées comptent pour le modèle de coûts, mais n'ont aucun
+  // événement à re-décoder : on les mesure sans payer leur archive brute.
+  captureFailed: (process.env.CAPTURE_FAILED ?? "1") !== "0",
+  captureRawFailed: (process.env.CAPTURE_RAW_FAILED ?? "0") !== "0",
+  captureExecution: (process.env.CAPTURE_EXECUTION ?? "1") !== "0",
+  captureCostsForeign: (process.env.CAPTURE_COSTS_FOREIGN ?? "0") !== "0",
 };

@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import bs58 from "bs58";
+import { resolveAccountKeys } from "./accounts";
 
 export const PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 
@@ -150,11 +151,7 @@ export function decodePumpEvents(info: any): PumpEvent[] {
   const meta = info?.meta;
 
   if (msg && meta) {
-    const keys: string[] = [
-      ...(msg.accountKeys ?? []),
-      ...(meta.loadedWritableAddresses ?? []),
-      ...(meta.loadedReadonlyAddresses ?? []),
-    ].map((k: Uint8Array) => bs58.encode(Buffer.from(k)));
+    const keys = resolveAccountKeys(info);
 
     for (const inner of meta.innerInstructions ?? []) {
       for (const ix of inner.instructions ?? []) {

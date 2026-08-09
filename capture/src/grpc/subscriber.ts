@@ -1,4 +1,5 @@
 import Client, { CommitmentLevel } from "@triton-one/yellowstone-grpc";
+import { config } from "../config";
 import { PUMP_PROGRAM_ID } from "../decode/pumpfun";
 import { sleep } from "../util";
 
@@ -81,7 +82,10 @@ export class PumpSubscriber {
       transactions: {
         pump: {
           vote: false,
-          failed: false,
+          // `undefined` = pas de filtre : on prend aussi les transactions
+          // échouées. Leur taux et leur coût sont une entrée du modèle de coûts
+          // (courses de slippage perdues), invisible si on les jette ici.
+          failed: config.captureFailed ? undefined : false,
           accountInclude: [PUMP_PROGRAM_ID],
           accountExclude: [],
           accountRequired: [],

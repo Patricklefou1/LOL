@@ -73,6 +73,11 @@ export class Health {
           trades_per_s: rate("trade"),
           creates_per_s: rate("create"),
           completes_total: this.counters.complete ?? 0,
+          failed_per_s: rate("failed"),
+          // Transactions qui référencent le compte du programme sans l'invoquer :
+          // le filtre gRPC ne sait pas les exclure, ce n'est pas un défaut.
+          foreign_per_s: rate("foreign"),
+          transfers_per_s: rate("transfer"),
           gaps_total: this.counters.gaps ?? 0,
           reconnects_total: this.counters.reconnect ?? 0,
           decode_miss_total: this.counters.decode_miss ?? 0,
