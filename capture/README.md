@@ -71,6 +71,46 @@ FROM pumpfun.trades ORDER BY received_at DESC LIMIT 10;
 
 Critères : zéro gap non expliqué, < 0,1 % d'écart sur l'échantillon réconcilié, `lag_ms_p99` stable, `decode_miss_total` proche de zéro (les instructions du programme qui n'émettent pas d'événement — création de comptes, etc. — peuvent en produire un peu : vérifier la nature des tx concernées via `raw_transactions` avant de s'alarmer).
 
+## Phase 2 — Labellisation des issues et réconciliation
+
+### `npm run labels` — la matrice de recherche
+
+Produit, pour chaque token créé un jour J (par défaut **J-4**, pour que les 72 h de vie + horizons soient clos) :
+
+- **`token_summary`** (1 ligne/token) : volumes, prix max et multiple, durée de vie, graduation, comportement du dev (achats, ventes, `dev_sold_fraction`, `rug_dev_dump`), snipe au slot de création (`snipe_slot0_share`, `snipe_slot0_buyers`).
+- **`token_minute`** (1 ligne/token/minute, 72 h max) : prix carry-forward, flux par minute (achats/ventes, acheteurs/vendeurs uniques, net flow, remplissage de courbe) et **rendements forward** `fwd_ret_{1,5,15,60,240}m` + `fwd_max_ret_{5,15,60,240}m` — la matrice token × temps × horizon des études d'événement.
+
+```bash
+npm run labels                        # labellise J-4
+npm run labels -- --day 2026-08-10    # un jour précis
+npm run labels -- --from 2026-08-05 --to 2026-08-12   # une plage
+```
+
+Relançable sans risque : la partition du jour est remplacée (idempotent). En cron quotidien :
+`15 6 * * * cd /opt/pumpfun/LOL/capture && npm run labels >> labels.log 2>&1`
+
+Conventions à connaître pour les études : prix **carry-forward** (un token mort reste à son dernier prix → les `fwd_*` post-mortem valent ~0 ; l'illiquidité réelle se traite dans le modèle de coûts) ; le « dev » est le wallet `user` du Create ; `rug_dev_dump` = dev qui revend ≥ 80 % de ses tokens avec première vente < 24 h (les ventes via wallets tiers relèvent des clusters, phase 3).
+
+Exemple d'étude en une requête (espérance inconditionnelle à 30 min de vie, l'étude n°1 du plan) :
+
+```sql
+SELECT quantile(0.5)(fwd_max_ret_60m) AS mediane_max_60m,
+       avg(fwd_ret_60m) AS moyenne_60m, count() AS n
+FROM pumpfun.token_minute WHERE minute_idx = 30;
+```
+
+### `npm run reconcile` — reboucher les trous
+
+Nécessite `RPC_URL` dans `.env` (l'endpoint HTTP du plan Triton convient — la latence est sans importance ici).
+
+```bash
+npm run reconcile                     # rejoue les trous de capture_gaps via getBlock (finalized)
+npm run reconcile -- --limit-slots 2000   # borne le budget RPC du run
+npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés et mesure le taux de tx manquantes
+```
+
+Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
+
 ## Déploiement sur un VPS OVH
 
 OVHcloud n'offre pas de ClickHouse managé (leur offre « Public Cloud Databases » couvre PostgreSQL, MySQL, MongoDB, Kafka, OpenSearch…, pas ClickHouse). Ce n'est pas un problème : ClickHouse est open-source et s'auto-héberge très bien sur un VPS — c'est le montage prévu ici, capture et base sur la même machine.
