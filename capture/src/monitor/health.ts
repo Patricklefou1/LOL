@@ -72,6 +72,7 @@ export class Health {
           tx_per_s: rate("tx"),
           trades_per_s: rate("trade"),
           creates_per_s: rate("create"),
+          other_per_s: rate("other_event"),
           completes_total: this.counters.complete ?? 0,
           gaps_total: this.counters.gaps ?? 0,
           reconnects_total: this.counters.reconnect ?? 0,

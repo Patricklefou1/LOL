@@ -43,7 +43,9 @@ Une ligne JSON de santé est émise toutes les 30 s :
  "lag_ms_p50":…,"lag_ms_p99":…,"sink_buffered":0,"sink_dropped":0,"sink_insert_errors":0}
 ```
 
-À surveiller : `gaps_total` (trous de flux), `decode_miss_total` (tx du programme sans événement décodé — si ça monte, le format a changé : corriger le décodeur puis **re-décoder depuis `raw_transactions`**), `sink_dropped` (pertes par saturation du tampon, jamais silencieuses), `lag_ms_p99`.
+À surveiller : `gaps_total` (trous de flux), `decode_miss_total` (tx du programme dont **aucun** événement n'a été reconnu — si ça monte, le format a changé : corriger le décodeur puis **re-décoder depuis `raw_transactions`**), `sink_dropped` (pertes par saturation du tampon, jamais silencieuses), `lag_ms_p99`.
+
+`other_per_s` compte les événements auxiliaires du programme (collecte de frais créateur, extensions de comptes, migration PumpSwap, incentives de volume…) : reconnus et comptés, non stockés en tables dédiées — leur contenu complet reste dans `raw_transactions` si une étude en a besoin plus tard. `lag_ms` à ~0 est normal en commitment `processed` (les transactions arrivent avant le marqueur de slot).
 
 ## Vérifier la Definition of Done de la phase 1
 
