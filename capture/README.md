@@ -124,6 +124,54 @@ npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés
 
 Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
 
+## Phase 3 — bases propriétaires
+
+### `npm run profiles` — devs, wallets, clusters
+
+Reconstruit intégralement trois tables dérivées (ce sont des agrégats de toute
+l'histoire capturée, relançables sans risque) :
+
+- **`dev_profiles`** (1 ligne/dev) : tokens créés, taux de graduation, taux de
+  rug, SOL acheté et vendu par le dev sur ses propres tokens, délai médian
+  jusqu'à sa première vente, heure de lancement modale, intervalle médian entre
+  deux lancements.
+- **`wallet_pnl`** (1 ligne/wallet) : PnL réalisé sur les positions **closes**
+  (le wallet a revendu ≥ 99 % des tokens achetés), win rate, multiple médian.
+  Les positions ouvertes sont comptées mais exclues du PnL : les valoriser
+  supposerait un prix de sortie que la courbe ne donnerait pas.
+- **`wallet_clusters`** : composantes connexes du graphe de financement.
+
+```bash
+npm run profiles
+npm run profiles -- --hub-degree 50   # seuil d'exclusion des hubs
+```
+
+### Portée réelle des clusters — à lire avant de s'en servir
+
+Le graphe est construit sur `sol_transfers`, donc sur les transferts **internes
+aux transactions qui touchent Pump.fun**. Or un dev se fait financer dans une
+transaction ordinaire, qui ne touche pas Pump.fun : cette arête-là, la capture
+ne la voit jamais. Concrètement, sur un échantillon de quelques heures, 85 000
+arêtes brutes tombent à **73** une fois gardées les seules qui relient deux
+acteurs réels.
+
+Trois filtres sont appliqués, chacun pour une raison :
+
+| Filtre | Pourquoi |
+|---|---|
+| `kind = 'transfer'` | `create_account` est du loyer de compte, pas du financement |
+| montant ∉ {2074080, 2039280, 1844400} | minimums d'exemption de loyer (création d'ATA) |
+| les deux extrémités sont des acteurs | sinon on relie des comptes techniques (ATA, PDA, vaults) que des milliers d'inconnus touchent en commun |
+
+Sans le troisième, une seule composante avale 90 % des wallets et le signal
+disparaît. Avec, les composantes sont petites et interprétables — le premier
+cluster observé regroupait 7 wallets, tous devs, 14 tokens créés en commun.
+
+**Pour l'ascendance complète d'un wallet, il faut un crawl RPC ciblé**
+(`getSignaturesForAddress` sur les devs d'intérêt, remonter au premier
+financement). C'est peu coûteux — quelques centaines de wallets — et ça reste à
+outiller.
+
 ## Déploiement sur un VPS OVH
 
 OVHcloud n'offre pas de ClickHouse managé (leur offre « Public Cloud Databases » couvre PostgreSQL, MySQL, MongoDB, Kafka, OpenSearch…, pas ClickHouse). Ce n'est pas un problème : ClickHouse est open-source et s'auto-héberge très bien sur un VPS — c'est le montage prévu ici, capture et base sur la même machine.
