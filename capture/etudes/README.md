@@ -23,6 +23,9 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 5 | Entrée au remplissage de courbe, sortie à la graduation | ❌ **tué** — le stop portait tout l'edge | `pregraduation.sql` |
 | 6 | **Persistance du PnL des wallets (smart money)** | ✅ **seul survivant** | — |
 | 7 | Élimination par historique de rug du dev | ⚠️ médiane oui, moyenne non | — |
+| 8 | Copier les wallets d'élite (entrée après eux) | ❌ **inversé** — on achète leur sortie | — |
+| 9 | Sortie conditionnée au flux acheteur | ❌ attendre coûte plus que le meilleur fill | — |
+| 10 | Acheter toute graduation sur PumpSwap | ⏸ **non concluant** — n = 46 | `pumpswap-decode.sql` |
 
 ---
 
@@ -127,3 +130,70 @@ Les trois règles qui en découlent sont gravées dans `../README.md`.
 La machinerie : population explicite, impact intégré, fill de stop mesuré, deux
 tests de robustesse. Elle se réutilise telle quelle pour la prochaine hypothèse.
 C'est le vrai livrable — l'usine, pas l'edge.
+
+
+---
+
+## Étude 10 — Acheter toute graduation (PumpSwap)
+
+Le décodeur PumpSwap est dans `pumpswap-decode.sql`, avec ses deux contrôles de
+validation. **Il est fiable** : le prix issu des réserves reproduit le prix
+exécuté (ratio médian 0,987 à l'achat, 0,996 à la vente) et le produit des
+réserves est stable d'un trade au suivant dans 99,7 % des cas.
+
+**L'étude, elle, n'est pas concluante**, et il faut le dire clairement.
+
+### Ce qui est mesuré
+
+Entrée à la première minute du pool, sortie 30 minutes plus tard, sur les pools
+amorcés entre 70 et 100 SOL (signature d'une graduation Pump.fun, médiane
+83,3 SOL). Impact et frais PumpSwap (0,6 % l'aller-retour) inclus.
+
+| Taille | Moyenne nette | Médiane | Gagnants |
+|---|---|---|---|
+| 0,25 SOL | 1,713 | 0,988 | 47,8 % |
+| 1 SOL | 1,687 | 0,972 | 47,8 % |
+| 2 SOL | 1,654 | 0,950 | 47,8 % |
+
+Trois éléments favorables et indépendants du résultat statistique : les frais
+sont trois fois plus faibles qu'en courbe, l'impact est négligeable (pools de
+83 SOL de profondeur), et le taux de gagnants est de 47,8 % contre 24 % en
+courbe.
+
+### Pourquoi ce n'est pas concluant
+
+- **n = 46.** Sur un profil de queue, un seul token à ×30 produit ce résultat.
+- **Sept heures de capture PumpSwap.** Il faut une semaine pour ~2 000
+  observations, un mois pour un walk-forward.
+- **Les prix sont des cotations, pas des exécutions.** La performance est
+  calculée sur le prix issu des réserves au dernier trade de chaque minute, avec
+  l'impact appliqué par-dessus. Aucun fill n'est simulé, aucun délai de détection
+  de la migration n'est modélisé — et l'espérance chute de 1,80 à 1,19 entre une
+  entrée à la minute 0 et une entrée à la minute 5.
+- **Des artefacts subsistent** dans la série de prix : sur certains pools, les
+  moyennes explosent à des valeurs de l'ordre de 10⁶, signe que `base_reserves`
+  tombe à des valeurs dégénérées. Les médianes sont robustes, les moyennes ne le
+  sont pas tant que ces pools ne sont pas identifiés et écartés.
+
+### Règle de sortie testée : « N secondes sans achat = vente »
+
+| Silence | Sortie médiane | Médiane nette | Gagnants |
+|---|---|---|---|
+| 3 s | 7 s | 0,9933 | 13,4 % |
+| 5 s | 10 s | 0,9932 | 13,4 % |
+| 10 s | 27 s | 0,9332 | 12,4 % |
+| 30 s | 301 s | 0,6820 | 19,6 % |
+
+La règle sort très vite (10 s médiane à 5 s de silence) et rend une médiane de
+0,9932 — on paie les frais et on sort. Elle protège du scénario long (0,682 à
+30 s de silence) mais ne crée pas d'espérance. Les moyennes ne sont pas
+reportées : elles sont polluées par les mêmes artefacts.
+
+### Erreur de méthode n°5, commise pendant cette étude
+
+**Définir une population par une propriété technique plutôt qu'économique.**
+La première version prenait « tout nouveau pool PumpSwap » — 1 245 pools et
+3 626 migrations/jour, alors qu'on en mesure moins de mille sur la courbe. La
+population contenait des paires sans rapport avec Pump.fun. Le filtre correct
+porte sur la profondeur d'amorçage du pool, signature économique de la
+graduation.
