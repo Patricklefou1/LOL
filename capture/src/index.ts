@@ -41,10 +41,14 @@ async function main(): Promise<void> {
 
         if (isFailed) health.note("failed");
 
-        // Une transaction échouée n'a aucun événement à re-décoder plus tard :
-        // on la compte dans les coûts sans payer son archive brute (le poste
-        // disque n°1). CAPTURE_RAW_FAILED=1 pour l'archiver quand même.
-        if (config.captureRaw && (!isFailed || config.captureRawFailed)) {
+        const exec = config.captureExecution ? extractExecution(info) : null;
+
+        // L'archive brute n'existe que pour re-décoder plus tard. Deux familles
+        // n'ont rien à re-décoder et pèsent pour un quart du poste disque n°1 :
+        // les transactions échouées (aucun événement émis) et celles qui se
+        // contentent de référencer le compte du programme sans l'invoquer.
+        const rejouable = (!isFailed || config.captureRawFailed) && (exec === null || exec.invokedPump);
+        if (config.captureRaw && rejouable) {
           sink.push("raw_transactions", {
             slot,
             signature,
@@ -104,9 +108,7 @@ async function main(): Promise<void> {
             });
           }
         }
-        if (config.captureExecution) {
-          const exec = extractExecution(info);
-
+        if (exec) {
           // `decode_miss` ne compte que les transactions qui invoquent vraiment
           // le programme : les autres n'ont, par construction, rien à décoder.
           if (decoded === 0 && !isFailed && exec.invokedPump) health.note("decode_miss");
