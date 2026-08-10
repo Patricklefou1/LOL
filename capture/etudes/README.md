@@ -31,7 +31,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 **Mécanisme.** Sur une bonding curve, le prix est une fonction déterministe des
 réserves. Le rendement entre un niveau de remplissage et la graduation est donc
 connu à l'avance ; le seul aléa est d'y parvenir. C'est un pari de probabilité,
-pas une prédiction de prix — d'où sa robustesse.
+pas une prédiction de prix. Le mécanisme est solide ; c'est l'exécution qui le tue.
 
 **Exécution testée.** Entrée au franchissement d'un niveau de remplissage, stop
 à −20 %, sortie dans la poussée de graduation, sinon prix à +15 min.
@@ -92,17 +92,15 @@ qu'un adversaire chasse.
 **Verdict : tué.** Ce n'était pas un edge, c'était un artefact de modélisation du
 stop.
 
-### Ce que l'étude ne dit pas
+### Les chiffres invalidés, conservés pour mémoire
 
-- **19 heures de données.** Le critère de passage exige un walk-forward sur
-  ≥ 4 semaines distinctes. Ce résultat est un candidat, pas un edge validé.
-- **Aucune sélection adverse modélisée.** Le stop à −20 % est un niveau évident ;
-  si le signal est tradé par d'autres, c'est précisément là qu'on se fait
-  chasser. Seul le micro-réel le révélera.
-- **Capital de travail** : ~1 480 opportunités/jour, détention ≤ 30 min, soit une
-  quinzaine de positions simultanées — 8 à 15 SOL immobilisés à 0,5 SOL l'unité.
-- **Fourchette de gain honnête** : 1 à 22 SOL/jour selon la sévérité du
-  retraitement des extrêmes ; estimation centrale 10 à 15 SOL/jour.
+Le tableau de résultats ci-dessus (jusqu'à 1,0474) suppose une sortie au niveau
+théorique du stop. Il est **faux**, et n'est gardé que pour montrer l'ampleur de
+l'écart : même population, même signal, même machinerie — +4,7 % avec un stop
+imaginaire, −1,8 % avec le stop réel.
+
+Sur cette base on aurait annoncé 10 à 15 SOL/jour. La réalité est une perte
+d'environ 6,5 SOL/jour.
 
 ### Erreurs commises pendant cette étude, et corrigées
 
