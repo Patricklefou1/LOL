@@ -1,3 +1,31 @@
+-- ============================================================================
+-- ATTENTION : CE DECODEUR EST FAUX. NE PAS UTILISER SES SORTIES.
+--
+-- Les offsets ci-dessous ne sont valides, au mieux, que pour la variante
+-- BuyEvent de 472 octets. Appliques aux six formes d'evenements reellement
+-- presentes dans le flux (BuyEvent 457 et 472, SellEvent 409, plus trois
+-- formes non identifiees de 64, 72 et 200 octets), ils produisent des valeurs
+-- incoherentes : des pools amorces a 83 SOL affichent une mediane de
+-- 40 175 SOL, et 91 pools sur 97 voient leurs reserves de base s'effondrer
+-- d'un facteur 1 000.
+--
+-- LA VALIDATION D'ORIGINE ETAIT CIRCULAIRE. Elle comparait le prix issu des
+-- reserves au prix issu des montants — deux quantites lues aux memes offsets,
+-- dans le meme evenement. Un tel controle ne peut pas echouer, et il passait
+-- effectivement sur les six formes, y compris les absurdes.
+--
+-- TEST NON CIRCULAIRE, celui qui aurait du etre fait : entre deux trades
+-- consecutifs d'un meme pool, la variation des reserves doit egaler le montant
+-- du trade. Il relie deux evenements distincts, donc il peut echouer.
+--   Resultat : variation mediane des reserves 4 865 a 43 440 SOL contre des
+--   trades de 2 a 9 SOL, soit un ecart relatif de 85 a 1 185 fois.
+--   Le decodeur echoue sur les six formes.
+--
+-- CE QU'IL FAUT FAIRE : retro-conceve chaque forme separement, et valider
+-- contre une verite terrain externe (transactions recuperees par RPC,
+-- comparaison aux variations de solde reelles) — jamais contre elle-meme.
+-- ============================================================================
+
 -- Décodeur PumpSwap : transforme pumpswap_events (charges utiles brutes) en
 -- trades exploitables.
 --

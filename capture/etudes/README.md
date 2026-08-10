@@ -25,7 +25,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 7 | Élimination par historique de rug du dev | ⚠️ médiane oui, moyenne non | — |
 | 8 | Copier les wallets d'élite (entrée après eux) | ❌ **inversé** — on achète leur sortie | — |
 | 9 | Sortie conditionnée au flux acheteur | ❌ attendre coûte plus que le meilleur fill | — |
-| 10 | Acheter toute graduation sur PumpSwap | ⏸ **non concluant** — n = 46 | `pumpswap-decode.sql` |
+| 10 | Acheter toute graduation sur PumpSwap | ❌ **retire** — decodeur faux | `pumpswap-decode.sql` |
 
 ---
 
@@ -136,12 +136,26 @@ C'est le vrai livrable — l'usine, pas l'edge.
 
 ## Étude 10 — Acheter toute graduation (PumpSwap)
 
-Le décodeur PumpSwap est dans `pumpswap-decode.sql`, avec ses deux contrôles de
-validation. **Il est fiable** : le prix issu des réserves reproduit le prix
-exécuté (ratio médian 0,987 à l'achat, 0,996 à la vente) et le produit des
-réserves est stable d'un trade au suivant dans 99,7 % des cas.
+**RÉSULTATS RETIRÉS — LE DÉCODEUR EST FAUX.**
 
-**L'étude, elle, n'est pas concluante**, et il faut le dire clairement.
+Les chiffres de cette section ont été calculés avec un décodeur invalide. Ils
+sont conservés uniquement comme trace de l'erreur.
+
+Le flux contient **six formes d'événements** (BuyEvent 457 et 472 octets,
+SellEvent 409, plus trois non identifiées de 64, 72 et 200 octets), décodées
+avec un seul jeu d'offsets. Conséquence : des pools amorcés à 83 SOL affichent
+une médiane de 40 175 SOL, et 91 pools sur 97 voient leurs réserves s'effondrer
+d'un facteur 1 000.
+
+**La validation d'origine était circulaire** : elle comparait le prix issu des
+réserves au prix issu des montants, deux quantités lues aux mêmes offsets dans
+le même événement. Un tel contrôle ne peut pas échouer — il passait sur les six
+formes, y compris les absurdes.
+
+Le test qui aurait dû être fait relie **deux événements distincts** : entre deux
+trades consécutifs d'un même pool, la variation des réserves doit égaler le
+montant du trade. Résultat : écart relatif de 85 à 1 185 fois. Échec sur les six
+formes.
 
 ### Ce qui est mesuré
 
