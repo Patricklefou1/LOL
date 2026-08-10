@@ -124,6 +124,44 @@ npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés
 
 Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
 
+## Deux règles non négociables pour toute étude
+
+Ces deux règles sont issues d'une enquête qui a coûté plusieurs heures et failli
+invalider à tort quatre études. Elles ne sont pas des préférences de style.
+
+### 1. `k = v_sol × v_tok` n'est PAS un invariant
+
+La bonding curve de Pump.fun est **dynamique** : le produit des réserves
+virtuelles dérive au cours de la vie d'un token (très probablement parce que les
+frais créateur sont prélevés sur les réserves). Mesuré sur le flux réel : `k` est
+constant pour 70 % des tokens seulement, et varie de plus de 100 % au sein d'un
+même token dans 29 % des cas.
+
+**Conséquence** : ne jamais reconstruire un prix ou une réserve à partir d'une
+constante de courbe. Toujours lire les champs de l'événement. Le prix correct est
+`virtual_sol_reserves / virtual_token_reserves` — vérifié contre le prix
+réellement exécuté (`sol_amount / token_amount`) sur 338 000 trades, ratio
+**1,0000**.
+
+Corollaire : un trade dont `k` s'écarte de 3,219e10 n'est **pas** corrompu. La
+capture est fidèle à la source — vérifié en récupérant des transactions
+directement par RPC et en les décodant indépendamment du pipeline.
+
+### 2. Exclure les graduations instantanées
+
+Il existe **deux mécanismes de graduation** distincts, mesurés sur les réserves
+réelles au moment exact de la complétion :
+
+| Seuil | Part des graduations |
+|---|---|
+| 85,0054 SOL (remplissage de courbe) | **72,8 %** |
+| 0 à 1 SOL (migration sans accumulation) | **27,2 %** |
+
+Les secondes ne sont pas tradables : il n'y a aucun remplissage à anticiper.
+Toute étude sur la graduation doit les écarter **explicitement**
+(`real_sol_reserves < 5e9` au moment de la complétion), et non par effet de bord
+d'un seuil d'entrée.
+
 ## Phase 3 — bases propriétaires
 
 ### `npm run profiles` — devs, wallets, clusters
