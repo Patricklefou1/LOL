@@ -27,13 +27,39 @@ Le flux contient au moins **six formes** : `BuyEvent` 457 et 472 octets,
 `SellEvent` 409, et trois non identifiées de 64, 72 et 200 octets. **Leurs
 dispositions diffèrent** — c'est établi, un jeu d'offsets unique est donc exclu.
 
-### Montants (validés contre les variations de solde, 45 tx par forme)
+### Montants — état après réparation
 
-| Forme | Offset | Contenu | Confirmation |
+Identification stricte : on ne compare qu'aux mouvements des comptes **de
+l'utilisateur** (pubkey lue à `@144`), et uniquement sur les transactions où
+PumpSwap est invoqué en premier niveau. Les deux restrictions comptent : sans
+elles, une dizaine de comptes bougent par transaction et les correspondances
+fortuites sont massives.
+
+| Forme | Offsets | Confirmation | Verdict |
 |---|---|---|---|
-| BuyEvent 472 | `@8` | quote entrant | 29/45 |
-| BuyEvent 472 | `@96` | base reçu par l'utilisateur | 29/45 |
-| SellEvent 409 | `@104` | mouvement réel côté base | 34/45 |
+| `BuyEvent` 472 | `@8` quote, `@16` et `@56` base | **76 %**, alternatives ≤ 21 % | exploitable |
+| `SellEvent` 409 | `@104` base | **80 %** | partiel — quote non localisé (`@8`/`@24` à 59 %) |
+| `BuyEvent` 457 | — | `@8` et `@104` à 48 % **pour quote comme pour base** | **non résolu** |
+
+Le cas 457 mérite d'être lu : quand un offset matche quote *et* base à parts
+égales, c'est la signature d'une correspondance fortuite, pas d'un champ. Aucun
+signal n'en sort.
+
+**Aucun décodeur n'est livré.** `BuyEvent` 472 représente environ un tiers des
+événements ; décoder un tiers du flux biaiserait toute étude qui s'appuierait
+dessus. Il faut les trois formes, ou rien.
+
+### Corrections apportées en chemin
+
+1. **Réintégrer les frais au compte 0.** Sans ça, aucun mouvement de SOL natif
+   ne correspond exactement, le payeur supportant les frais de transaction.
+2. **Restreindre aux comptes de l'utilisateur.** Comparer à tous les mouvements
+   de la transaction produit des correspondances fortuites en pagaille — c'est
+   ce qui faisait ressortir `@8` et `@24` à 75 % alors qu'ils portent la même
+   valeur.
+3. **Écarter les transactions routées.** Quand un agrégateur intercale ses
+   propres comptes, l'utilisateur de l'événement n'est pas celui dont le solde
+   bouge. Gain : +12 points sur `BuyEvent` 472.
 
 ### Pubkeys (identifiées par leur taux de répétition)
 
