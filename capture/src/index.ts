@@ -2,6 +2,7 @@ import bs58 from "bs58";
 import { config } from "./config";
 import { extractExecution } from "./decode/execution";
 import { decodePumpEvents, priceSol } from "./decode/pumpfun";
+import { PUMPSWAP_PROGRAM_ID, extractRawEvents } from "./decode/pumpswap";
 import { PumpSubscriber } from "./grpc/subscriber";
 import { Health } from "./monitor/health";
 import { Sink } from "./sink/clickhouse";
@@ -42,6 +43,23 @@ async function main(): Promise<void> {
         if (isFailed) health.note("failed");
 
         const exec = config.captureExecution ? extractExecution(info) : null;
+
+        // PumpSwap : on archive la charge utile brute des événements sans les
+        // interpréter. Les structures Buy et Sell diffèrent et seront
+        // rétro-conçues sur un échantillon large, puis rejouées depuis ici.
+        if (config.capturePumpswap && !isFailed) {
+          for (const ev of extractRawEvents(info, PUMPSWAP_PROGRAM_ID)) {
+            health.note("pumpswap");
+            sink.push("pumpswap_events", {
+              slot,
+              signature,
+              received_at: receivedAt,
+              event_name: ev.name,
+              discriminator: ev.discriminator,
+              payload: ev.payload.toString("base64"),
+            });
+          }
+        }
 
         // L'archive brute n'existe que pour re-décoder plus tard. Deux familles
         // n'ont rien à re-décoder et pèsent pour un quart du poste disque n°1 :
@@ -142,7 +160,9 @@ async function main(): Promise<void> {
           // Les transferts d'une transaction échouée n'ont pas eu lieu : les
           // enregistrer inventerait des arêtes dans le graphe de financement.
           // Les frais, eux, sont bien payés — ils restent dans tx_costs.
-          if (!isFailed) {
+          // Restreint à la bonding curve : le graphe de financement porte sur les
+          // devs et les snipers, pas sur la plomberie de l'AMM post-graduation.
+          if (!isFailed && exec.invokedPump) {
             for (const t of exec.transfers) {
               health.note("transfer");
               sink.push("sol_transfers", {

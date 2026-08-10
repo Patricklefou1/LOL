@@ -1,6 +1,7 @@
 import Client, { CommitmentLevel } from "@triton-one/yellowstone-grpc";
 import { config } from "../config";
 import { PUMP_PROGRAM_ID } from "../decode/pumpfun";
+import { PUMPSWAP_PROGRAM_ID } from "../decode/pumpswap";
 import { sleep } from "../util";
 
 export interface SubscriberCallbacks {
@@ -86,7 +87,11 @@ export class PumpSubscriber {
           // échouées. Leur taux et leur coût sont une entrée du modèle de coûts
           // (courses de slippage perdues), invisible si on les jette ici.
           failed: config.captureFailed ? undefined : false,
-          accountInclude: [PUMP_PROGRAM_ID],
+          // Bonding curve + AMM de destination : sans PumpSwap, tout ce qui
+          // arrive à un token après sa graduation est invisible.
+          accountInclude: config.capturePumpswap
+            ? [PUMP_PROGRAM_ID, PUMPSWAP_PROGRAM_ID]
+            : [PUMP_PROGRAM_ID],
           accountExclude: [],
           accountRequired: [],
         },

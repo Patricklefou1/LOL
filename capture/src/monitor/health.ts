@@ -78,6 +78,7 @@ export class Health {
           // le filtre gRPC ne sait pas les exclure, ce n'est pas un défaut.
           foreign_per_s: rate("foreign"),
           transfers_per_s: rate("transfer"),
+          pumpswap_per_s: rate("pumpswap"),
           gaps_total: this.counters.gaps ?? 0,
           reconnects_total: this.counters.reconnect ?? 0,
           decode_miss_total: this.counters.decode_miss ?? 0,

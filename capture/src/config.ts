@@ -27,4 +27,7 @@ export const config = {
   captureRawFailed: (process.env.CAPTURE_RAW_FAILED ?? "0") !== "0",
   captureExecution: (process.env.CAPTURE_EXECUTION ?? "1") !== "0",
   captureCostsForeign: (process.env.CAPTURE_COSTS_FOREIGN ?? "0") !== "0",
+  // Archive brute des événements PumpSwap (post-graduation), en attente
+  // de la rétro-conception de leurs structures.
+  capturePumpswap: (process.env.CAPTURE_PUMPSWAP ?? "1") !== "0",
 };
