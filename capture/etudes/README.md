@@ -20,8 +20,8 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 2 | Filtre sur l'activité de la 1re minute (trades, acheteurs, inflow) | ❌ meurt au retrait des 3 meilleurs | — |
 | 3 | Sortie sur vente du dev | ❌ inversé (1,000 vs 0,963) | — |
 | 4 | Sortie sur net flow négatif / excès de vendeurs | ❌ inversé, instable selon l'âge | — |
-| 5 | **Entrée au remplissage de courbe, sortie à la graduation** | ✅ **retenu** | `pregraduation.sql` |
-| 6 | Persistance du PnL des wallets (smart money) | ✅ retenu | — |
+| 5 | Entrée au remplissage de courbe, sortie à la graduation | ❌ **tué** — le stop portait tout l'edge | `pregraduation.sql` |
+| 6 | **Persistance du PnL des wallets (smart money)** | ✅ **seul survivant** | — |
 | 7 | Élimination par historique de rug du dev | ⚠️ médiane oui, moyenne non | — |
 
 ---
@@ -55,16 +55,42 @@ graduent, et la médiane des graduations est à **×2,33**. La stratégie perd
 quatre fois sur cinq et se rattrape sur la queue — mais une queue *mécanique*,
 pas une loterie.
 
-### Robustesse
+### Robustesse — passée, puis annulée par le fill du stop
 
-| Test | Résultat |
-|---|---|
-| Retrait des 3 meilleurs (sur 1 171) | 1,0421 |
-| Retrait des 10 meilleurs | 1,0298 |
-| Retrait des 25 meilleurs | **1,0030** |
-| Tranches de 3 h positives | **7 / 7** |
+L'hypothèse passait les deux tests classiques : 1,0030 après retrait des 25
+meilleurs trades sur 1 171, et 7 tranches de 3 h positives sur 7. C'est ce qui
+l'avait fait retenir.
 
-Survit au retrait de 2 % des meilleurs trades et à toutes les tranches horaires.
+**Ces tests ne testaient pas la bonne chose.** Ils vérifient qu'un résultat ne
+repose pas sur quelques coups de chance ni sur une fenêtre temporelle
+particulière — mais pas qu'il est exécutable. Or 79 % des positions se terminent
+au stop : la stratégie était entièrement déterminée par une hypothèse
+d'exécution, pas par un signal.
+
+### Le fill réel tue l'hypothèse
+
+Mesuré sur le flux : viser −20 % donne un fill médian à **−26,4 %** avec une
+seconde de réaction. Le franchissement se fait *par* une vente qui a déjà creusé
+(−22,3 % au déclenchement), et ça continue de tomber (−27,8 % à 3 s).
+
+| Stop visé | Déclenche | Fill réel | Espérance nette |
+|---|---|---|---|
+| 0,99 | 87,3 % | 0,9475 | **1,0016** |
+| 0,95 | 84,9 % | 0,9176 | 0,9860 |
+| 0,90 | 82,6 % | 0,8530 | 0,9741 |
+| 0,80 | 78,4 % | 0,7347 | 0,9500 |
+| 0,70 | 74,9 % | 0,6201 | 0,9357 |
+| sans stop | — | — | 0,9774 |
+
+Resserrer le stop améliore l'espérance de façon monotone — un stop très serré
+devient un filtre de momentum : on ne reste que dans les tokens qui ne reculent
+jamais, et ceux-là graduent. Mais le plafond est à **+0,16 %**, soit zéro, et il
+ne survit à aucun des frottements restants : 6,4 % des ventes échouent, la
+réaction à 1 s est optimiste, et un stop sur un niveau évident est exactement ce
+qu'un adversaire chasse.
+
+**Verdict : tué.** Ce n'était pas un edge, c'était un artefact de modélisation du
+stop.
 
 ### Ce que l'étude ne dit pas
 
@@ -91,5 +117,15 @@ Elles sont consignées parce qu'elles se reproduiraient sans ça.
 3. **`k = v_sol × v_tok` traité comme un invariant.** La courbe Pump.fun est
    dynamique. Cette hypothèse a fait conclure à tort à 23 % de données corrompues
    — vérification faite par RPC, la capture est fidèle et le décodeur correct.
+4. **Stop modélisé à son niveau théorique**, et non à son fill réel. La plus
+   coûteuse : elle a fait annoncer un edge de +4,7 % là où l'exécution réelle
+   donne −1,8 %. Une stratégie qui se termine au stop 79 % du temps est
+   *entièrement* déterminée par la qualité de ce stop.
 
-Les règles 1 et 3 sont désormais gravées dans `../README.md`.
+Les trois règles qui en découlent sont gravées dans `../README.md`.
+
+### Ce qui reste de cette étude
+
+La machinerie : population explicite, impact intégré, fill de stop mesuré, deux
+tests de robustesse. Elle se réutilise telle quelle pour la prochaine hypothèse.
+C'est le vrai livrable — l'usine, pas l'edge.

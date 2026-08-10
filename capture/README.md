@@ -162,6 +162,25 @@ Toute étude sur la graduation doit les écarter **explicitement**
 (`real_sol_reserves < 5e9` au moment de la complétion), et non par effet de bord
 d'un seuil d'entrée.
 
+### 3. Un stop se mesure à son fill réel, jamais à son niveau théorique
+
+Modéliser « stop à −20 % » par « sortie à 0,80 » est faux, et l'écart n'est pas
+un détail : mesuré sur le flux, viser −20 % donne un fill médian à **−26,4 %**
+avec une seconde de réaction. Deux causes qui se cumulent :
+
+- le franchissement du seuil se fait **par** une vente, qui a déjà creusé le prix
+  — au moment du déclenchement on est déjà à −22,3 %, pas à −20 % ;
+- le prix continue de tomber pendant la réaction (−27,8 % à 3 s, −29,2 % à 10 s).
+
+S'y ajoute un effet mécanique de courbe : le prix ayant chuté, les réserves
+virtuelles ont baissé, donc **l'impact à la vente est plus lourd qu'à l'achat**
+(réserves ≈ `v_entrée × √(p_stop / p_entrée)`).
+
+**Conséquence** : toute stratégie dont le stop se déclenche souvent est
+entièrement déterminée par la qualité de ce stop. Le mesurer au niveau théorique
+a fait conclure à un edge de +4,7 % là où le fill réel donne −1,8 %. Mesurer le
+fill dès la première version, jamais après coup.
+
 ## Phase 3 — bases propriétaires
 
 ### `npm run profiles` — devs, wallets, clusters
