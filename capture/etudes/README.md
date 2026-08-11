@@ -25,7 +25,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 7 | Élimination par historique de rug du dev | ⚠️ médiane oui, moyenne non | — |
 | 8 | Copier les wallets d'élite (entrée après eux) | ❌ **inversé** — on achète leur sortie | — |
 | 9 | Sortie conditionnée au flux acheteur | ❌ attendre coûte plus que le meilleur fill | — |
-| 10 | Acheter toute graduation sur PumpSwap | ❌ **retire** — decodeur faux | `pumpswap-decode.sql` |
+| 10 | Acheter toute graduation sur PumpSwap | ⏸ à refaire — décodeur désormais correct | `pumpswap-decode.sql` |
 
 ---
 
@@ -136,7 +136,10 @@ C'est le vrai livrable — l'usine, pas l'edge.
 
 ## Étude 10 — Acheter toute graduation (PumpSwap)
 
-**RÉSULTATS RETIRÉS — LE DÉCODEUR EST FAUX.**
+**RÉSULTATS RETIRÉS — ils avaient été calculés avec un décodeur faux.**
+
+Le décodeur a depuis été refait à partir de l'IDL Anchor publié on-chain, et validé
+par deux contrôles dont un non circulaire. L'étude est à refaire.
 
 Les chiffres de cette section ont été calculés avec un décodeur invalide. Ils
 sont conservés uniquement comme trace de l'erreur.
