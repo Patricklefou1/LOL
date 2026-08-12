@@ -30,7 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
-| 15 | **Réveil après consolidation d'une heure** | ⏳ **le plus prometteur** — médiane +3,3 % contre +0,6 % de baseline | — |
+| 15 | **Réveil après consolidation (post-graduation)** | ⏳ **le plus prometteur** — +3,6 % médian contre 1,0000 de baseline | `reveil-postgraduation.sql` |
 
 ---
 
@@ -223,66 +223,78 @@ graduation.
 
 ---
 
-## Étude 15 — Réveil après consolidation
+## Étude 15 — Réveil après consolidation *(post-graduation)*
 
-**Mécanisme.** Un token qui reste une heure dans un couloir de ±5 % a laissé
+**Mécanisme.** Un token qui reste 30 minutes dans un couloir de ±10 % a laissé
 sortir ses vendeurs impatients : l'offre disponible est épuisée. La cassure du
-haut du range se fait alors contre peu de résistance. C'est une hypothèse sur
-une *contrainte*, pas sur une opinion — la catégorie que le référentiel classe
-comme la plus solide.
+haut du couloir part alors contre peu de résistance. Hypothèse sur une
+*contrainte*, pas sur une opinion.
 
-**Détection.** Fenêtre glissante **strictement passée** : à la minute *m*, on
-regarde les 60 minutes précédentes (`ROWS BETWEEN 60 PRECEDING AND 1 PRECEDING`).
-Signal si `haut/bas ≤ 1,10`, au moins 60 trades sur la fenêtre, et
-`prix > haut × 1,01`. Entrée à la minute suivante, jamais à l'instant du signal.
+**Règle.** Fenêtre **strictement passée** de 30 minutes, `haut/bas ≤ 1,10`,
+≥ 60 trades, cassure à `haut × 1,01`. Entrée à la minute suivante. Taille
+plafonnée à 10 % des réserves du pool.
 
-### Pourquoi la bonding curve ne convient pas
+### Pourquoi pas sur la bonding curve
 
-Le motif suppose un token qui respire une heure. Sur la courbe, **91,7 % des
-tokens sont morts à 60 minutes** et moins de 1 % encore actifs. Résultat : 142
-signaux sur **13 tokens**, médiane 1,0088, et seulement 3,1 % des signaux
-dépassent +2 %. Ce qu'on y appelle « range » est un token endormi faute
-d'acheteurs — le prix ne bouge pas parce que personne ne trade.
+91,7 % des tokens sont morts à 60 minutes, moins de 1 % encore actifs. Résultat :
+142 signaux sur **13 tokens**, aucune hausse. Ce qu'on y appelle « couloir » est
+un token endormi faute d'acheteurs. Sur PumpSwap, 2 035 pools vivent au-delà
+d'une heure.
 
-### Sur PumpSwap, le motif existe
+### Résultats (55 h de capture PumpSwap)
 
-2 035 pools restent actifs au-delà d'une heure. **197 signaux sur 99 pools.**
+L'arbitrage de la sortie est le résultat principal : **il n'y a pas de signal de
+sortie**, seulement un choix entre rendement médian et queue gauche.
 
-| Horizon | n | Médiane | Moyenne nette | Gagnants | Perd > 20 % |
-|---|---|---|---|---|---|
-| +5 min | 195 | 1,0022 | 0,9838 | 14,9 % | 1,0 % |
-| +15 min | 184 | 1,0071 | 0,9862 | 38,6 % | 1,1 % |
-| +30 min | 174 | 1,0132 | 0,9884 | 58,0 % | 1,7 % |
-| **+60 min** | **149** | **1,0333** | **1,0110** | **69,8 %** | 4,0 % |
+| Horizon | n | Médiane | Gagnants | Perd > 20 % |
+|---|---|---|---|---|
+| 30 min | 352 | 1,0245 | 64,5 % | **6,6 %** |
+| 60 min | 332 | **1,0360** | 62,3 % | 12,7 % |
+| 120 min | 309 | 1,0619 | 59,2 % | **22,7 %** |
 
 **Baseline appariée** — mêmes pools, mêmes instants, sans condition de réveil :
-médiane 1,0062 à +60 min. L'écart est de **+2,7 points**.
+**1,0000**. L'écart est donc l'intégralité du rendement.
 
-Deux propriétés que rien d'autre dans ce registre ne présente : le rendement
-**croît avec l'horizon** (cohérent avec un mouvement qui se développe après la
-cassure), et le risque de perte lourde reste à 4 %.
+Une sortie conditionnelle sur invalidation de la cassure n'apporte rien
+(médiane 1,0315, pertes lourdes 10,5 %) : elle se déclenche à la minute 14 à
+0,9422, c'est-à-dire après une baisse — le même problème que le stop de
+l'étude 5.
 
-### Robustesse : insuffisante pour conclure
+### Les tests passés
 
 | Test | Résultat |
 |---|---|
-| Avec tous les signaux | 1,0110 |
-| Sans les 3 meilleurs (sur 149) | **0,9989** |
-| Sans les 10 meilleurs | 0,9884 |
-| Médiane | 1,0259 |
-| Tranches de 6 h | 84 % des signaux dans **une seule** |
+| Baseline appariée | +3,6 points |
+| Sensibilité aux paramètres | **9 combinaisons sur 9 positives** (durées 30/60/120, couloirs 5/10/20 %) |
+| Retrait des extrêmes | +1,7 % encore sans les 15 meilleurs sur 316 |
+| **Fill réel à l'entrée** | **0,9979 — favorable de 0,2 %** |
+| **Fill réel à la sortie** | 0,9988 — 0,1 % contre |
 
-La moyenne est portée par trois trades. La médiane, elle, ne dépend pas des
-extrêmes et reste à +2,6 % — c'est ce qui justifie de suivre l'hypothèse plutôt
-que de l'enterrer.
+Le fill est le test qui a tué l'étude 5, et celle-ci le passe. L'asymétrie est
+mécanique : on **achète dans une hausse qui débute** et on **vend à un instant
+planifié**, jamais dans une cascade.
 
-**Verdict : à revalider.** Il faut une fenêtre temporelle qui n'a pas servi à la
-découverte, et assez de signaux pour que la stabilité soit mesurable. À 55 h de
-capture PumpSwap on ne les a pas ; à deux semaines, oui.
+### Ce qui manque
 
-### Machinerie
+- **Aucune fenêtre de validation** : les 352 signaux couvrent toute la capture.
+- **73 % des signaux dans une seule tranche de 6 h** — ce peut être un régime.
+- Les **moyennes sont inutilisables**, polluées par quelques pools dont le prix
+  explose. Seules les médianes sont reportées.
+- La **sélection adverse** n'est mesurable qu'en micro-réel.
 
-Réutilisable telle quelle : série dense par minute, détection de range par
-fenêtre glissante passée, rendements forward par `leadInFrame`, baseline
-appariée sur les mêmes pools et instants. Le tout tient en trois tables
-temporaires et évite les jointures multiples qui saturent la mémoire.
+**Verdict : à revalider sur données neuves, sans toucher un paramètre.**
+
+### Erreurs de méthode n° 10 et 11, corrigées ici
+
+10. **`leadInFrame(prix, 61)` renvoie 61 lignes, pas 61 minutes.** Ces pools ne
+    tradent que 27 % des minutes : le « +60 min » valait 62 minutes à la médiane
+    mais 159 au 9<sup>e</sup> décile, et le +180 sortait de la partition avec un
+    décalage négatif. Corrigé par une série dense à prix reporté.
+11. **Le facteur d'impact devenait négatif** sous 0,5 SOL de réserves, donnant
+    des moyennes à −2 400. Corrigé par la contrainte de taille — qui est de
+    toute façon une règle de bon sens : on ne prend pas 0,5 SOL dans un pool qui
+    en contient 0,2.
+
+Les deux ont été repérées parce qu'un chiffre était **absurde**, pas parce que
+le raisonnement avait été vérifié. Le réflexe fonctionne ; il ne remplace pas
+d'écrire à quel instant chaque variable est connue.
