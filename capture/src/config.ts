@@ -30,4 +30,9 @@ export const config = {
   // Archive brute des événements PumpSwap (post-graduation), en attente
   // de la rétro-conception de leurs structures.
   capturePumpswap: (process.env.CAPTURE_PUMPSWAP ?? "1") !== "0",
+  // Retirer Pump.fun de la souscription divise le flux gRPC : le trafic
+  // etranger qui reference son compte disparait. Coût : plus de creations, de
+  // completions ni de trades de courbe — donc plus de lien entre un pool
+  // PumpSwap et son origine.
+  capturePumpfun: (process.env.CAPTURE_PUMPFUN ?? "1") !== "0",
 };

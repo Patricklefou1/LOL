@@ -4,6 +4,8 @@ import { PUMP_PROGRAM_ID } from "../decode/pumpfun";
 import { PUMPSWAP_PROGRAM_ID } from "../decode/pumpswap";
 import { sleep } from "../util";
 
+const arrayFilter = (a: string[]): string[] => a.filter((x) => x !== "");
+
 export interface SubscriberCallbacks {
   onTransaction(update: any): void;
   onSlot(slot: number, status: number): void;
@@ -89,9 +91,10 @@ export class PumpSubscriber {
           failed: config.captureFailed ? undefined : false,
           // Bonding curve + AMM de destination : sans PumpSwap, tout ce qui
           // arrive à un token après sa graduation est invisible.
-          accountInclude: config.capturePumpswap
-            ? [PUMP_PROGRAM_ID, PUMPSWAP_PROGRAM_ID]
-            : [PUMP_PROGRAM_ID],
+          accountInclude: arrayFilter([
+            config.capturePumpfun ? PUMP_PROGRAM_ID : "",
+            config.capturePumpswap ? PUMPSWAP_PROGRAM_ID : "",
+          ]),
           accountExclude: [],
           accountRequired: [],
         },
