@@ -25,7 +25,12 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 7 | Élimination par historique de rug du dev | ⚠️ médiane oui, moyenne non | — |
 | 8 | Copier les wallets d'élite (entrée après eux) | ❌ **inversé** — on achète leur sortie | — |
 | 9 | Sortie conditionnée au flux acheteur | ❌ attendre coûte plus que le meilleur fill | — |
-| 10 | Acheter toute graduation sur PumpSwap | ⏸ à refaire — décodeur désormais correct | `pumpswap-decode.sql` |
+| 10 | Acheter toute graduation sur PumpSwap | ⚠️ médiane +1,2 % stable, moyenne à zéro | `pumpswap-decode.sql` |
+| 11 | Élimination des effondrements post-migration | ⚠️ effondrements ÷ 7, espérance encore nulle | — |
+| 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
+| 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
+| 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 15 | **Réveil après consolidation d'une heure** | ⏳ **le plus prometteur** — médiane +3,3 % contre +0,6 % de baseline | — |
 
 ---
 
@@ -214,3 +219,70 @@ La première version prenait « tout nouveau pool PumpSwap » — 1 245 pools et
 population contenait des paires sans rapport avec Pump.fun. Le filtre correct
 porte sur la profondeur d'amorçage du pool, signature économique de la
 graduation.
+
+
+---
+
+## Étude 15 — Réveil après consolidation
+
+**Mécanisme.** Un token qui reste une heure dans un couloir de ±5 % a laissé
+sortir ses vendeurs impatients : l'offre disponible est épuisée. La cassure du
+haut du range se fait alors contre peu de résistance. C'est une hypothèse sur
+une *contrainte*, pas sur une opinion — la catégorie que le référentiel classe
+comme la plus solide.
+
+**Détection.** Fenêtre glissante **strictement passée** : à la minute *m*, on
+regarde les 60 minutes précédentes (`ROWS BETWEEN 60 PRECEDING AND 1 PRECEDING`).
+Signal si `haut/bas ≤ 1,10`, au moins 60 trades sur la fenêtre, et
+`prix > haut × 1,01`. Entrée à la minute suivante, jamais à l'instant du signal.
+
+### Pourquoi la bonding curve ne convient pas
+
+Le motif suppose un token qui respire une heure. Sur la courbe, **91,7 % des
+tokens sont morts à 60 minutes** et moins de 1 % encore actifs. Résultat : 142
+signaux sur **13 tokens**, médiane 1,0088, et seulement 3,1 % des signaux
+dépassent +2 %. Ce qu'on y appelle « range » est un token endormi faute
+d'acheteurs — le prix ne bouge pas parce que personne ne trade.
+
+### Sur PumpSwap, le motif existe
+
+2 035 pools restent actifs au-delà d'une heure. **197 signaux sur 99 pools.**
+
+| Horizon | n | Médiane | Moyenne nette | Gagnants | Perd > 20 % |
+|---|---|---|---|---|---|
+| +5 min | 195 | 1,0022 | 0,9838 | 14,9 % | 1,0 % |
+| +15 min | 184 | 1,0071 | 0,9862 | 38,6 % | 1,1 % |
+| +30 min | 174 | 1,0132 | 0,9884 | 58,0 % | 1,7 % |
+| **+60 min** | **149** | **1,0333** | **1,0110** | **69,8 %** | 4,0 % |
+
+**Baseline appariée** — mêmes pools, mêmes instants, sans condition de réveil :
+médiane 1,0062 à +60 min. L'écart est de **+2,7 points**.
+
+Deux propriétés que rien d'autre dans ce registre ne présente : le rendement
+**croît avec l'horizon** (cohérent avec un mouvement qui se développe après la
+cassure), et le risque de perte lourde reste à 4 %.
+
+### Robustesse : insuffisante pour conclure
+
+| Test | Résultat |
+|---|---|
+| Avec tous les signaux | 1,0110 |
+| Sans les 3 meilleurs (sur 149) | **0,9989** |
+| Sans les 10 meilleurs | 0,9884 |
+| Médiane | 1,0259 |
+| Tranches de 6 h | 84 % des signaux dans **une seule** |
+
+La moyenne est portée par trois trades. La médiane, elle, ne dépend pas des
+extrêmes et reste à +2,6 % — c'est ce qui justifie de suivre l'hypothèse plutôt
+que de l'enterrer.
+
+**Verdict : à revalider.** Il faut une fenêtre temporelle qui n'a pas servi à la
+découverte, et assez de signaux pour que la stabilité soit mesurable. À 55 h de
+capture PumpSwap on ne les a pas ; à deux semaines, oui.
+
+### Machinerie
+
+Réutilisable telle quelle : série dense par minute, détection de range par
+fenêtre glissante passée, rendements forward par `leadInFrame`, baseline
+appariée sur les mêmes pools et instants. Le tout tient en trois tables
+temporaires et évite les jointures multiples qui saturent la mémoire.
