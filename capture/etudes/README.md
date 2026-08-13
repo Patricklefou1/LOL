@@ -30,6 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 18 | **Surplomb d'un porteur** | ⏳ **prédit le rug** — 2,87 contre 0,14 de réserves ; premier `sans top 3` > 1 |  `filtre-surplomb.sql` |
 | 17 | **Stops au fill réel** | ❌ **aucune règle de sortie n'aide** — la perte est un rug, pas une baisse | `sortie-fill-reel.sql` |
 | 16 | **Liquidité discriminante** | ⏳ gradient monotone, taux de gagnants **44 % → 86 %** | `liquidite-discriminante.sql` |
 | 15 | Réveil après consolidation (post-graduation) | ⚠️ **médiane positive, moyenne non concluante** — échoue au retrait des extrêmes | `reveil-postgraduation.sql` |
@@ -471,3 +472,75 @@ que la sortie ne peut pas voir venir.
 de réagir.** Ici la réponse est non — 99,5 % de la liquidité part en une
 transaction. Trois familles de stops ont été simulées pour découvrir qu'aucune ne
 pouvait fonctionner ; la mesure du gap l'aurait dit d'emblée.
+
+
+---
+
+## Hypothèse 18 — le surplomb d'un porteur prédit le rug
+
+Cinq prédicteurs **fixés avant mesure**, tous calculés sur des trades strictement
+antérieurs au signal. 193 pools, dont 24 ruggés.
+
+| | Pools ruggés | Pools sains |
+|---|---|---|
+| **Plus gros porteur / réserves de base** | **2,866** | **0,142** |
+| Part de portefeuilles nouveaux (30 min) | 0,0338 | 0,0591 |
+| Argent neuf net (SOL, 30 min) | 26,65 | 15,08 |
+| Part du volume à l'achat | 0,7509 | 0,6619 |
+| Le créateur a vendu | 4,2 % | 4,7 % |
+
+### Ce que les intuitions donnaient
+
+- **« Un portefeuille détenait une grande partie des tokens »** — **confirmé, et
+  c'est le prédicteur dominant.** Facteur 20 sur la médiane. Le surplomb est
+  la condition matérielle du rug : il faut détenir pour pouvoir vider.
+- **« Manque de nouveaux holders »** — confirmé, mais faible : 3,4 % contre 5,9 %.
+- **« Manque d'achat, d'argent neuf »** — **infirmé, et c'est l'inverse.** Les pools
+  ruggés encaissent **26,65 SOL** nets contre 15,08, et 75 % de volume acheteur
+  contre 66 %. Évident après coup : **on ne peut extraire que ce qui est entré.**
+  L'afflux d'argent n'est pas une protection, c'est l'appât.
+- **Le créateur** ne signale rien du tout (4,2 % contre 4,7 %). Cohérent avec
+  l'étude 17 : 9 % seulement des ventes massives viennent de lui.
+
+### Le filtre, et ce qu'il coûte
+
+Règle mécanique, non ajustée : écarter si le plus gros porteur dépasse les
+réserves du pool.
+
+| | Pools | Taux de rug | Pertes lourdes |
+|---|---|---|---|
+| Écarté (surplomb) | 82 | 18,3 % | 9,7 % |
+| **Gardé** | 111 | **8,1 %** | **2,9 %** |
+
+Il divise les pertes lourdes par 3,3. **Mais il coûte cher en performance** : le
+groupe écarté a une *meilleure* médiane (1,0528) et un *meilleur* taux de gagnants
+(80 %) que celui gardé (1,0074 et 59,9 %). Un gros porteur pousse le prix aussi
+bien qu'il l'effondre. Ce n'est pas un filtre gratuit, c'est un arbitrage.
+
+### Les deux filtres ensemble
+
+Liquidité ≥ 1 000 SOL **et** absence de surplomb — 127 signaux sur 484 :
+
+| | Médiane | Gagnants | **Sans top 3** | Sans top 10 |
+|---|---|---|---|---|
+| **Gardé** | 1,0188 | **77,2 %** | **1,0096** | 0,9623 |
+| Écarté | 1,0231 | 63,6 % | 0,9683 | 0,9607 |
+
+**Premier `sans top 3` au-dessus de 1 obtenu par un filtre applicable à l'entrée**
+(1,0368 hors rugs n'était accessible qu'a posteriori). Mais il reste mince, il est
+dans l'échantillon, et `sans top 10` reste à 0,9623 — retirer 10 signaux sur 127
+est un test sévère. **À valider hors échantillon avant toute conclusion.**
+
+Noter aussi que le filtre combiné **ne réduit pas** les pertes lourdes (5,5 %
+contre 5,3 %) : les gros pools sont des cibles plus attirantes, ce qui annule le
+gain du filtre de surplomb sur ce plan.
+
+### Réserves
+
+- **Les positions de bonding curve sont invisibles** pour cette cohorte : ces
+  tokens ont gradué avant la capture. Le surplomb réel est donc sous-estimé, et le
+  filtre sous-performe ce qu'il pourrait faire. Cela s'améliorera seul.
+- Un `user` très actif peut être un routeur d'agrégateur plutôt qu'un détenteur.
+  Non vérifié.
+- 39,6 % des pools sains dépassent aussi le seuil : le surplomb est fréquent, il
+  n'est pas une condition suffisante.
