@@ -30,6 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 21 | **Edge multi-heures** | ❌ **la cassure s'inverse au-delà de 30 min** — moyenne 0,9153 contre 1,047 pour la baseline | `multi-heures.sql` |
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
 | 18 | **Surplomb d'un porteur** | ⏳ **prédit le rug** — 2,87 contre 0,14 de réserves ; premier `sans top 3` > 1 |  `filtre-surplomb.sql` |
@@ -670,3 +671,49 @@ simplement pas accessible à un preneur de liquidité à une seconde.** Elle
 appartient à qui est dans le même bloc. Toute stratégie qui a besoin de réagir à
 un prix affiché est déjà perdue ; seules survivent celles qui décident sur un
 état *antérieur* et acceptent le prix courant, comme les études 15 à 18.
+
+
+---
+
+## Hypothèse 21 — l'edge multi-heures n'existe pas (et la cassure s'inverse)
+
+323 pools liquides, 641 SOL de réserve médiane, 134 trades par heure : la seule
+population où la capacité existe. Position calée à 1 % des réserves.
+
+| | Horizon | n | Médiane | Moyenne | Sans top 3 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|---|---|
+| **Cassure 6 h** | +3 h | 1 029 | 0,9969 | **0,9153** | 0,9086 | 45,7 % | 12,5 % |
+| | +6 h | 1 029 | 0,9938 | **0,8665** | 0,8535 | 47,0 % | 20,4 % |
+| | +12 h | 938 | 0,9819 | **0,8137** | 0,7915 | 46,1 % | 33,3 % |
+| **Baseline** | +3 h | 9 733 | 0,9742 | **1,047** | 0,9443 | 23,9 % | 6,1 % |
+| | +6 h | 9 292 | 0,9742 | **1,0182** | 0,9108 | 29,1 % | 10,9 % |
+| | +12 h | 8 274 | 0,9739 | **0,969** | 0,8489 | 32,3 % | 20,0 % |
+
+### La cassure s'inverse
+
+Elle bat la baseline en médiane (+2,3 points) et écrase son taux de gagnants
+(45,7 % contre 23,9 %) — **mais sa moyenne est très inférieure** (0,9153 contre
+1,047) et elle double les pertes lourdes (12,5 % contre 6,1 %).
+
+C'est exactement le piège de la règle 4. Une médiane et un taux de gagnants
+flatteurs sur une stratégie qui perd davantage. **L'effet de consolidation-cassure
+est de courte durée** : réel à 30 minutes (études 15 et 16, médiane 1,0184 à
+1,0426), nul puis négatif à partir de 3 heures.
+
+### Le chiffre qui dit tout : la médiane est le coût
+
+La médiane de la baseline vaut **0,9742 à tous les horizons** — soit exactement
+0,99 × 0,99 × 0,994. Le pool liquide médian **ne bouge pas** entre 3 et 12 heures.
+On ne paie que l'aller-retour. Même chose sur les rescapés de graduation, dont la
+médiane valait 0,9546 = 0,98 × 0,98 × 0,994 partout, avec 7 trades par heure.
+
+Sur ces horizons il n'y a pas de tendance à capter : il y a un coût à payer et
+une queue à espérer.
+
+### Blocage structurel, troisième occurrence
+
+`pumpswap_trades` ne stocke **ni `base_mint` ni `quote_mint`**. Les pools hors SOL
+ont maintenant faussé les hypothèses 16, 19 et 21, et ne s'écartent qu'à coups de
+seuils fragiles — ici une bande de prix calibrée sur la cohorte de graduation.
+**Les mints sont dans les comptes de l'instruction et `resolveAccountKeys` sait
+déjà les résoudre.** C'est la correction la plus rentable qui reste à faire.
