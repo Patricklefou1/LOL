@@ -30,6 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 16 | **Liquidité discriminante** | ⏳ gradient monotone, taux de gagnants **44 % → 86 %** | `liquidite-discriminante.sql` |
 | 15 | Réveil après consolidation (post-graduation) | ⚠️ **médiane positive, moyenne non concluante** — échoue au retrait des extrêmes | `reveil-postgraduation.sql` |
 
 ---
@@ -319,3 +320,79 @@ nombre pris isolément est correct.
 **Règle : après toute correction de données, refaire TOUS les tests, pas
 seulement la mesure principale.** Et pour toute stratégie, reporter systématiquement
 médiane *et* moyenne tronquée — une médiane seule cache exactement ce cas.
+
+
+---
+
+## Hypothèse 16 — la liquidité discrimine (et corrige la lecture de la 15)
+
+### L'objection qui a relancé l'étude
+
+Le verdict de la 15 reposait sur le retrait des extrêmes. **L'objection est juste :
+dans une loi de puissance, retirer la queue retire le mécanisme, pas le bruit.**
+Le capital-risque a exactement ce profil. La bonne question n'était pas « la
+moyenne survit-elle au trim » mais **« qu'ont ces tokens en commun »**.
+
+Réponse : la liquidité. Après exclusion des 23 pools hors SOL, sur 492 signaux :
+
+| Quintile de réserve | SOL | Médiane | Gagnants | Moyenne hors queue |
+|---|---|---|---|---|
+| 1 | 6 – 322 | 0,987 | 44,4 % | 0,9527 |
+| 2 | 327 – 618 | 1,0051 | 60,6 % | 0,9584 |
+| 3 | 619 – 1 343 | 1,0164 | 68,4 % | 1,0063 |
+| 4 | 1 351 – 2 895 | 1,0308 | 78,6 % | 0,9867 |
+| **5** | **2 909 – 14 443** | **1,0426** | **85,7 %** | 0,997 |
+
+**Monotone sur les deux colonnes, de 44 % à 86 % de gagnants** — et ce gradient ne
+doit rien à la queue : médiane et taux de gagnants sont insensibles aux extrêmes.
+C'est le résultat solide de l'étude, sur ~98 observations par tranche.
+
+### Ce que le filtre change, et ce qu'il ne change pas
+
+Il **ne transforme pas** la stratégie en rente : la moyenne hors queue reste sous 1
+partout (0,997 au meilleur quintile). Il fait passer le *grind* de **perdant à
+nul** — on gagne 86 % du temps, petit, on perd gros 14 % du temps, et le résultat
+net hors loterie est plat. **L'espérance reste portée par la queue.**
+
+C'est un modèle d'affaires légitime, à trois conditions : que le taux de queue
+soit stable, qu'on encaisse assez de tirages, et que le dimensionnement survive
+aux pertes lourdes.
+
+### Ce qui manque pour conclure : du temps, pas des idées
+
+Le taux de queue repose sur **5 événements**. L'intervalle de Poisson à 95 % pour
+5 observations va de 1,6 à 11,7 — soit un taux réel entre 0,3 % et 2,2 %, **un
+facteur 7 d'incertitude**. Les mesures par tranches de 12 h le confirment : 0 %,
+0,31 %, 2,94 %, 3,23 %, 5,13 %.
+
+Serrer ce taux à ±30 % demande une quarantaine d'événements. Au rythme observé
+avec le filtre — environ un par jour — cela fait **six semaines de capture**.
+
+> **523 signaux, c'est beaucoup pour une médiane et rien pour une queue.** Les
+> deux quantités ne se mesurent pas à la même vitesse. C'est la leçon
+> transposable : dire « n = 523 » sans préciser *de quoi* est une illusion de
+> précision.
+
+### Réserve de méthode
+
+Le discriminant a été cherché sur 4 variables × 5 quintiles, soit 20 comparaisons.
+« 4 extrêmes sur 5 dans le quintile haut » vaut p ≈ 0,7 % isolément, **mais ne
+survit pas à la correction pour comparaisons multiples** (p ≈ 0,13). Cette moitié
+du résultat n'est pas établie. Le gradient de médiane et de taux de gagnants,
+lui, tient sans la queue et ne dépend pas de ce test.
+
+---
+
+## Erreur de méthode n° 13 — confondre « la queue est fragile » et « la stratégie est nulle »
+
+Le test du retrait des extrêmes détecte une queue **accidentelle**. Appliqué à une
+distribution dont la queue *est* le mécanisme, il condamne mécaniquement toute
+stratégie de loi de puissance — y compris les bonnes.
+
+**Règle : quand le trim tue une stratégie, ne pas conclure. Vérifier d'abord si la
+queue se reproduit à un taux stable et ce qui distingue ses membres.** Un trim qui
+échoue est une question, pas un verdict.
+
+Corollaire consigné : **`pumpswap_trades` n'a pas de colonne `quote_mint`.** Les
+pools hors SOL ne peuvent être écartés que par un seuil sur les réserves, ce qui
+est fragile. À capturer.
