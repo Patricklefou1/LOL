@@ -774,7 +774,17 @@ résultat tient sur données certifiées.
 | Moyenne | 8,258 | **0,993** |
 | **Sans top 3** | **1,0096** | **0,9752** |
 
-**Le ×314 qui portait toute la moyenne était dans un pool hors SOL.** Dix-sept
+**Le ×314 qui portait toute la moyenne était dans un pool hors SOL** — et
+l'autopsie complète est pire que ça. Le pool est
+`8dKmnMw3n2Bj3LiSxwqfjpEhGq3FvQ5Fh4UHLyFUwSGw` : **le SOL y est la base**, le
+memecoin `BtAPyCkmCDzaFdCC8MwzkW6wvD7nXKJhMAMsrJ9sGmbV` la quote. Le « prix »
+lu était donc celui du SOL libellé dans ce memecoin, et le ×303,8 signifie que
+ce token **s'est effondré de 99,67 %**. Vérification on-chain : il n'a aucune
+courbe à l'adresse dérivée `["bonding-curve", mint]`, son mint appartient à
+**Token-2022** — il n'a jamais été lancé sur Pump.fun, encore moins gradué.
+
+Trois erreurs empilées dans un seul chiffre : mauvais programme d'origine, prix
+inversé, et gain qui était une perte. Dix-sept
 signaux contaminés sur 484 suffisaient à faire passer le résultat phare
 au-dessus de 1. C'était exactement ce que le test de retrait des extrêmes
 signalait sans qu'on sache le lire.
