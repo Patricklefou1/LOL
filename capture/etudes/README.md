@@ -30,6 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
 | 18 | **Surplomb d'un porteur** | ⏳ **prédit le rug** — 2,87 contre 0,14 de réserves ; premier `sans top 3` > 1 |  `filtre-surplomb.sql` |
 | 17 | **Stops au fill réel** | ❌ **aucune règle de sortie n'aide** — la perte est un rug, pas une baisse | `sortie-fill-reel.sql` |
@@ -608,3 +609,64 @@ en 30 minutes.
 **Leur edge n'est pas un edge sur le marché, c'est un edge conditionnel à la
 survie.** Ce n'est pas invalidant — filtrer est légitime — mais cela impose que
 le filtre soit applicable à l'entrée, ce que l'étude 18 a commencé à construire.
+
+
+---
+
+## Hypothèse 20 — trois paris à contre-courant, trois morts
+
+### 1. Acheter les cadavres (chute de 80 %)
+
+**84,6 % des graduations touchent −80 %, en 86 secondes médianes.** Le couteau ne
+s'arrête pas de tomber :
+
+| Horizon | Médiane | Moyenne | Sans top 3 | Gagnants |
+|---|---|---|---|---|
+| 5 min | 0,856 | 0,8535 | 0,822 | 33,4 % |
+| 15 min | 0,4628 | 0,7268 | 0,6952 | 31,4 % |
+| 30 min | 0,3252 | 0,6615 | 0,625 | 28,6 % |
+
+### 2. Le pump initial comme signal de danger
+
+Vrai comme description, inutile comme stratégie. Rendement à 30 min selon le
+comportement de la première minute :
+
+| Première minute | n | Médiane | Moyenne | Pertes > 50 % |
+|---|---|---|---|---|
+| −20 % ou pire | 459 | 0,0625 | 0,4801 | 77,3 % |
+| Baisse légère | 252 | 0,0939 | 0,7002 | 69,4 % |
+| **Hausse < 30 %** | 831 | **0,8749** | 0,7234 | 45,6 % |
+| Hausse 30-100 % | 218 | 0,1049 | 0,7177 | 70,2 % |
+| Pump > ×2 | 58 | 0,12 | 0,7076 | 63,8 % |
+
+**Les deux extrêmes tuent** — un effondrement comme un pump ×2 mènent au même
+désastre, et la zone tiède fait 14 fois mieux en médiane. Mais aucune moyenne
+n'atteint 1. Croisée avec les horizons courts, la meilleure combinaison
+(hausse douce, 2 min) donne 0,9765 de médiane pour **0,9259 de moyenne**.
+
+### 3. Attraper la mèche
+
+| Maintien | Médiane | Moyenne | Sans top 3 | Gagnants |
+|---|---|---|---|---|
+| 5 s | 0,9566 | 0,9081 | 0,9046 | 17,2 % |
+| 20 s | 0,9578 | 0,8925 | 0,8848 | 20,9 % |
+| 90 s | 0,9649 | 0,9100 | 0,8926 | 29,9 % |
+
+### Pourquoi les trois meurent : le preneur paie le gap dans les deux sens
+
+C'est le résultat qui vaut d'être gardé.
+
+| | Fill obtenu |
+|---|---|
+| Vendre un stop à −20 % | **0,5697 × le niveau visé** — on sort 43 % plus bas |
+| Acheter une chute de −80 % | **1,0888 × le niveau visé** — on entre 8,9 % plus haut |
+
+Une seconde de latence coûte dans les deux sens : à la vente le prix a déjà
+fui vers le bas, à l'achat il a déjà rebondi vers le haut. Le déclencheur qu'on
+observe n'est jamais le prix qu'on obtient.
+
+**La volatilité intra-minute de ces tokens est réelle et énorme — elle n'est
+simplement pas accessible à un preneur de liquidité à une seconde.** Elle
+appartient à qui est dans le même bloc. Toute stratégie qui a besoin de réagir à
+un prix affiché est déjà perdue ; seules survivent celles qui décident sur un
+état *antérieur* et acceptent le prix courant, comme les études 15 à 18.

@@ -124,7 +124,7 @@ npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés
 
 Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
 
-## Quatre règles non négociables pour toute étude
+## Cinq règles non négociables pour toute étude
 
 Ces règles sont issues d'enquêtes qui ont coûté plusieurs heures et failli
 invalider à tort quatre études. Elles ne sont pas des préférences de style.
@@ -203,6 +203,23 @@ exactement la population qu'il fallait écarter.**
 Cette règle a dû être demandée deux fois avant d'être gravée. Elle est un garde-fou
 contre un biais de présentation, pas contre une erreur de calcul : les deux
 chiffres étaient calculés, seul le plus flatteur était rapporté.
+
+### 5. Le preneur paie le gap dans les deux sens
+
+Mesuré sur le flux, avec une seconde de latence :
+
+| | Fill obtenu |
+|---|---|
+| Vendre un stop à −20 % | 0,5697 × le niveau visé |
+| Acheter une chute de −80 % | 1,0888 × le niveau visé |
+
+À la vente le prix a déjà fui vers le bas, à l'achat il a déjà rebondi vers le
+haut. **Le déclencheur qu'on observe n'est jamais le prix qu'on obtient.**
+
+**Conséquence** : ne jamais concevoir une stratégie qui réagit à un prix affiché.
+La volatilité intra-minute de ces tokens est réelle et énorme, mais elle
+appartient à qui est dans le même bloc. Ne concevoir que des règles qui décident
+sur un état antérieur et acceptent le prix courant.
 
 ## Phase 3 — bases propriétaires
 
