@@ -40,8 +40,10 @@ choisis. Tout signal dont l'horodatage d'entrée est postérieur est hors
 | Médiane | **1,0261** |
 | Baseline appariée | 0,9995 |
 | Écart | **+2,66 points** |
-| Trades gagnants | 64,2 % |
-| Pertes > 20 % | 6,7 % |
+| Trades gagnants | 63,1 % |
+| Pertes > 20 % | 7,6 % |
+| Moyenne brute | 2,804 *(inutilisable — portée par des queues à ×314)* |
+| **Moyenne sans les 10 meilleurs** | **0,9698** |
 
 ## Critères de décision, décidés à l'avance
 
@@ -53,9 +55,15 @@ test n'est pas concluant et on attend — on ne conclut pas sur moins.
 - écart à la baseline appariée ≥ **+1,5 point**
 - taux de trades gagnants ≥ **58 %**
 
-**TUÉ** si l'une des deux est vraie :
+**TUÉ** si l'une des trois est vraie :
 - médiane < **1,005**
 - écart à la baseline < **+0,5 point**
+- **moyenne privée de ses 10 meilleurs signaux < 1,000**
+
+> Le troisième critère a été **ajouté** après avoir constaté, sur l'échantillon
+> de réglage, que la moyenne passe de 2,804 à 0,9698 en retirant 10 signaux sur
+> 523. C'est un durcissement, jamais un assouplissement : ajouter une condition
+> de mort est légitime, relâcher un seuil de passage ne l'est pas.
 
 **NON CONCLUANT** entre les deux : prolonger la fenêtre et refaire, sans rien
 changer d'autre.

@@ -30,7 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
-| 15 | **Réveil après consolidation (post-graduation)** | ⏳ **le plus prometteur** — +3,6 % médian contre 1,0000 de baseline | `reveil-postgraduation.sql` |
+| 15 | Réveil après consolidation (post-graduation) | ⚠️ **médiane positive, moyenne non concluante** — échoue au retrait des extrêmes | `reveil-postgraduation.sql` |
 
 ---
 
@@ -264,11 +264,13 @@ l'étude 5.
 
 | Test | Résultat |
 |---|---|
-| Baseline appariée | +3,6 points |
-| Sensibilité aux paramètres | **9 combinaisons sur 9 positives** (durées 30/60/120, couloirs 5/10/20 %) |
-| Retrait des extrêmes | +1,7 % encore sans les 15 meilleurs sur 316 |
+| Baseline appariée (médiane) | **+2,4 points** — 1,0184 contre 0,994 |
+| Sensibilité aux paramètres | **9 combinaisons sur 9 positives** |
+| **Retrait des extrêmes (moyenne)** | ❌ **0,9698 sans les 10 meilleurs sur 523** |
 | **Fill réel à l'entrée** | **0,9979 — favorable de 0,2 %** |
-| **Fill réel à la sortie** | 0,9988 — 0,1 % contre |
+| Fill réel à la sortie | 0,9988 — 0,1 % contre |
+| Frais réels *(mesurés dans les événements)* | 0,55 % l'aller-retour ; on en modélise 0,6 % |
+| Illusion de report | ❌ écartée — **100 %** des signaux ont ≥ 10 trades dans la fenêtre de sortie |
 
 Le fill est le test qui a tué l'étude 5, et celle-ci le passe. L'asymétrie est
 mécanique : on **achète dans une hausse qui débute** et on **vend à un instant
@@ -298,3 +300,22 @@ planifié**, jamais dans une cascade.
 Les deux ont été repérées parce qu'un chiffre était **absurde**, pas parce que
 le raisonnement avait été vérifié. Le réflexe fonctionne ; il ne remplace pas
 d'écrire à quel instant chaque variable est connue.
+
+
+---
+
+## Erreur de méthode n° 12 — ne pas refaire les tests après correction
+
+Le verdict « le plus prometteur » de l'étude 15 reposait sur un test de
+robustesse (« 1,0339 → 1,0258 sans le top 5 ») calculé sur la table **à horizons
+faussés**, avant la correction de l'erreur n° 10. Une fois la série densifiée, la
+mesure principale a été refaite — **mais pas le test de robustesse**. Il échoue :
+0,9698 sans les 10 meilleurs.
+
+Ce n'est pas un calcul faux, c'est une conclusion non recalculée. C'est plus
+insidieux : rien dans les chiffres ne signale l'incohérence, puisque chaque
+nombre pris isolément est correct.
+
+**Règle : après toute correction de données, refaire TOUS les tests, pas
+seulement la mesure principale.** Et pour toute stratégie, reporter systématiquement
+médiane *et* moyenne tronquée — une médiane seule cache exactement ce cas.
