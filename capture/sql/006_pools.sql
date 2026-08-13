@@ -26,3 +26,18 @@ CREATE TABLE IF NOT EXISTS __DB__.pumpswap_pools
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY pool
 SETTINGS index_granularity = 8192;
+
+-- Orientation du pool. 5 519 pools ont le SOL du côté BASE : leur `price_sol`
+-- est alors le prix du SOL libellé dans l'autre token, soit l'inverse de ce
+-- qu'on veut. Colonnes ALIAS — calculées à la lecture, aucun stockage, et
+-- valables rétroactivement sur les lignes déjà écrites.
+--
+-- Usage dans une étude :
+--   prix  = if(sol_en_base, 1 / price_sol, price_sol)
+--   SOL   = if(sol_en_base, base_reserves, quote_reserves) / 1e9
+-- Le facteur de décimales que l'inversion déplace est constant par pool : il
+-- s'annule dans tout ratio de prix, seul usage qu'en font les études.
+ALTER TABLE __DB__.pumpswap_pools ADD COLUMN IF NOT EXISTS
+  sol_en_base UInt8 ALIAS base_mint = 'So11111111111111111111111111111111111111112';
+ALTER TABLE __DB__.pumpswap_pools ADD COLUMN IF NOT EXISTS
+  exploitable UInt8 ALIAS est_sol = 1 OR base_mint = 'So11111111111111111111111111111111111111112';

@@ -915,3 +915,53 @@ portée aujourd'hui :
    (moyenne 1,0037) est le seul indice qu'elle existe. À confirmer hors
    échantillon avant d'y croire.
 2. Être de l'autre côté du trade — hors de portée sur un AMM sans emprunt.
+
+
+---
+
+## Correction 23 — la déduplication, et une erreur d'anecdote
+
+### Le constat de départ
+
+La liste des 24 effondrements montrait `EJBZ3i99nNEoZmD3jyhJ4xfCngBrXzp6ir81hhJfpump`
+**trois fois** — 03:17, 03:18, 03:20 — le même pool racheté trois fois pendant
+qu'il mourait. J'en ai conclu à un défaut de conception.
+
+Le redéclenchement est bien massif : **475 signaux pour seulement 187 pools**, et
+87 pools seulement produisent un signal unique. Un pool en a produit onze.
+
+### La mesure dit l'inverse
+
+Règle testée : un seul signal par pool par tranche de 30 minutes — c'est-à-dire
+la durée de détention, pendant laquelle on est déjà en position.
+
+| | n | Médiane | Moyenne | Sans top 3 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|---|
+| Tel quel | 475 | 1,0211 | **0,9834** | 0,9784 | 68,0 % | 5,1 % |
+| **Dédoublonné** | 377 | 1,0217 | **0,9765** | 0,9706 | 69,8 % | 5,6 % |
+
+Retirer 98 signaux **abaisse** la moyenne. Les redéclenchements étaient meilleurs
+que la moyenne, pas pires : leur taux de pertes lourdes était inférieur.
+
+### Mais le chiffre dégradé est le bon
+
+La déduplication n'est pas un filtre destiné à améliorer le résultat, c'est une
+**contrainte de la réalité** : si on détient 30 minutes et que le signal se
+represente, on est déjà en position. Le 0,9834 comptait des trades qu'on n'aurait
+pas pu prendre.
+
+**La performance réaliste de l'étude 15 est donc 0,9765, pas 0,9834.**
+
+À noter aussi : 187 pools pour 70 heures de capture. La stratégie est très
+concentrée — un incident sur quelques pools déplace tout le résultat.
+
+---
+
+## Erreur de méthode n° 16 — généraliser depuis un cas saillant
+
+Trois lignes identiques dans une liste de 24 sautaient aux yeux, et j'en ai
+déduit un défaut général avant de le mesurer. Mesuré, l'effet est inverse.
+
+**Règle : une régularité vue dans une liste est une hypothèse, jamais un
+constat.** Ce qui saute aux yeux dans un échantillon affiché est précisément ce
+que l'œil sélectionne — la répétition se remarque, la dispersion non.
