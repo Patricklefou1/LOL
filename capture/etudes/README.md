@@ -37,6 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
+| 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
 | 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
@@ -1022,3 +1023,69 @@ C'est la même leçon que la règle 5, sous une autre forme : ici la latence n'e
 pas technique mais logique. Le signal ne peut pas être observé avant d'être
 consommé. FROGGY n'était pas un contre-exemple à trouver, c'était une
 démonstration de l'impossibilité.
+
+
+---
+
+## Hypothèse 23 — le range confirmé par oscillation
+
+L'étude 15 exige seulement que le prix **reste** dans un couloir. Trois formes
+très différentes y satisfont : un prix plat, un prix qui dérive du bas vers le
+haut, et un vrai range qui touche ses bornes. Seul le troisième porte le
+mécanisme qu'on prétend exploiter — des vendeurs postés en haut, épuisés à la
+cassure.
+
+Une touche = une minute passée à moins de 2 % d'une borne. **Aucune contrainte de
+largeur**, quatre durées de range, horizon 30 minutes.
+
+| Durée | Exigence | n | Médiane | Moyenne | Sans top 3 | Gagnants | Pertes > 50 % | Largeur méd. |
+|---|---|---|---|---|---|---|---|---|
+| 30 | ≥ 3 | 1 369 | 1,0340 | **0,9490** | 0,9457 | 61,1 % | 11,0 % | 1,17 |
+| **30** | **≥ 6** | 419 | 1,0242 | **0,9764** | 0,9703 | **70,2 %** | **6,2 %** | 1,05 |
+| 60 | ≥ 6 | 448 | 1,0149 | **0,9730** | 0,9647 | 62,3 % | 5,8 % | 1,13 |
+| 120 | ≥ 6 | 323 | 1,0039 | **0,9548** | 0,9469 | 53,9 % | 6,2 % | 1,20 |
+| 240 | ≥ 6 | 180 | 1,0043 | **0,9789** | 0,9611 | 54,4 % | 5,0 % | 1,43 |
+
+### L'oscillation réduit le risque sans améliorer le gain
+
+En passant de 1 à 6 touches sur 30 minutes : le taux de gagnants monte de
+**43,9 % à 70,2 %** et les pertes lourdes tombent de **16,1 % à 6,2 %**. C'est la
+plus forte réduction de risque obtenue par une condition d'entrée.
+
+**Mais la moyenne ne bouge pas** : 0,9753 → 0,9490 → 0,9764. Aucune réponse
+graduée. Le mécanisme « épuisement des vendeurs » n'est donc pas confirmé —
+l'oscillation sélectionne des marchés plus calmes, elle ne prédit pas la suite.
+
+### Et la durée ne compte pas non plus
+
+À exigence égale, allonger le range de 30 à 240 minutes ne fait rien gagner :
+0,9764 / 0,9730 / 0,9548 / 0,9789. FROGGY consolidait quatre heures, mais quatre
+heures ne valent pas mieux que trente minutes.
+
+### Convergence avec l'étude 15
+
+À 6 touches, la **largeur médiane du range vaut 1,05** — soit exactement le
+couloir de 10 % que l'étude 15 impose par décret. Les deux spécifications
+décrivent la même population, atteinte par deux chemins.
+
+C'est une forme de robustesse : 0,9764 ici, 0,9834 là-bas, 70,2 % et 68,0 % de
+gagnants. **Ce n'est pas une nouvelle stratégie, c'est la même, confirmée
+autrement.**
+
+### Une erreur de spécification, et le piège qu'elle a révélé
+
+La ligne « ≥ 1 touche » ne teste rien : le minimum d'une série est toujours à
+moins de 2 % de lui-même. Ces lignes sont en réalité **une cassure du plus haut
+sur N heures, sans aucune condition de range** — et ce sont elles qui donnaient
+les meilleures moyennes.
+
+| Cassure du plus haut 4 h | n | Pools | Médiane | Moyenne | Sans top 3 | Sans top 10 | Sans top 30 |
+|---|---|---|---|---|---|---|---|
+| Signal | 948 | **240** | 0,9669 | **1,1874** | 1,1367 | 1,0495 | **0,9602** |
+| Baseline | 191 558 | 1 670 | 0,9762 | 0,9612 | 0,9607 | 0,9599 | 0,9587 |
+
+Gain total 177,7 ; **les trois meilleurs pools en apportent 226,2, soit 127 %**.
+Sans eux le résultat est négatif, et à 30 signaux retirés sur 948 la stratégie
+rejoint sa baseline.
+
+Une moyenne de 1,19 portée par trois pools sur 240 : c'est le ×314 à nouveau.
