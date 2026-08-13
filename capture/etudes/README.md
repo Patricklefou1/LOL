@@ -37,6 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
+| 26 | **Borne d'ancrage** | ✅ **1,0208 sur 52 tokens, zéro effondrement** — première implémentation correcte | `borne-ancrage.sql` |
 | 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
 | 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
@@ -1125,3 +1126,68 @@ Sans eux le résultat est négatif, et à 30 signaux retirés sur 948 la straté
 rejoint sa baseline.
 
 Une moyenne de 1,19 portée par trois pools sur 240 : c'est le ×314 à nouveau.
+
+
+---
+
+# Étude 26 — la borne d'ancrage
+
+## Le défaut qui invalidait tout ce qui précède
+
+Les études 15 à 25 mesuraient une **fenêtre glissante** : la borne haute était
+recalculée à chaque bougie sur les N précédentes. Dès qu'une bougie casse, elle
+devient la borne de la suivante. La borne monte avec le prix et n'est jamais
+franchie proprement — le signal ne se déclenche que si une bougie dépasse de 5 %
+son propre plus haut récent, ce qui rate les vraies cassures.
+
+En figeant la borne — mesurée une fois sur une heure de range, puis gardée
+constante — **le taux de gagnants passe de 51 % à 81,7 %**, tout le reste égal.
+
+Autrement dit : les échecs de toute la journée ne portaient pas sur la stratégie
+demandée. Elle n'avait jamais été implémentée.
+
+## Le résultat
+
+| Configuration | Moyenne | Tokens | Médiane | Sans top 3 | Gagnants | Effondrements |
+|---|---|---|---|---|---|---|
+| Borne d'ancrage seule | 0,9938 | 103 | 1,0271 | 0,9903 | 81,7 % | 2,72 % |
+| **+ taille médiane ≥ 0,01 SOL** | **1,0208** | **52** | 1,0190 | **1,0106** | 67,1 % | **0 %** |
+| *+ seuil à 0,05 SOL* | 1,0231 | 50 | 1,0194 | 1,0123 | 67,5 % | 0 % |
+| *Baseline du marché* | 0,9515 | — | 0,9921 | — | 33,2 % | — |
+
+Le seuil de taille ne règle pas un curseur : il vérifie qu'un marché existe. Les
+**sept effondrements** de la version précédente avaient tous une taille médiane
+de trade nulle ou à 0,002 SOL — des essaims de micro-transactions sur des pools
+affichant jusqu'à 6 900 SOL de réserve.
+
+Robustesse : 1,0208 à 0,01 SOL, 1,0231 à 0,05. Le résultat ne dépend pas du
+réglage fin.
+
+## Trois variantes testées et écartées
+
+**Les 5 % en une seule bougie.** Exiger que la bougie passe de sous la borne à
+plus de 5 % au-dessus ne laisse que **10 tokens** et donne 0,9629. Le
+franchissement se fait presque toujours par paliers de 0,5 à 1,5 % — c'est le
+mode normal, pas l'exception.
+
+**La régularité des achats.** Un opérateur qui pousse un prix achète des montants
+calibrés. L'indicateur le voit parfaitement sur `QeRWrMQU` : la part des achats à
+±20 % de leur médiane passe de 0,43 à **1,000** au début de l'opération et reste
+au-dessus de 0,88 pendant six bougies. Mais il **ne sépare pas** les
+effondrements du reste — 0,413 contre 0,367.
+
+**La régularité du volume et de l'amplitude.** Mêmes conclusions : le motif est
+réel sur le token d'origine, absent à l'échelle.
+
+Trois hypothèses d'artificialité, trois fois le même verdict. Ce qui se voit sur
+un graphique n'est pas ce qui distingue statistiquement les catastrophes.
+
+## Erreur de méthode n° 17 — construire la mesure avant de vérifier la mécanique
+
+J'ai passé quinze heures à empiler des filtres sur une implémentation fausse. La
+fenêtre glissante était visible dès le premier token ouvert : le range contenait
+sa propre cassure. Aucune mesure agrégée ne pouvait le montrer, et je n'ai regardé
+que parce que l'utilisateur m'y a forcé, token après token.
+
+**Règle : avant d'optimiser une règle, vérifier sur un cas concret qu'elle
+déclenche là où elle doit.** Un backtest ne valide jamais sa propre mécanique.
