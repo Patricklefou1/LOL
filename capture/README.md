@@ -124,7 +124,7 @@ npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés
 
 Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
 
-## Cinq règles non négociables pour toute étude
+## Six règles non négociables pour toute étude
 
 Ces règles sont issues d'enquêtes qui ont coûté plusieurs heures et failli
 invalider à tort quatre études. Elles ne sont pas des préférences de style.
@@ -220,6 +220,24 @@ haut. **Le déclencheur qu'on observe n'est jamais le prix qu'on obtient.**
 La volatilité intra-minute de ces tokens est réelle et énorme, mais elle
 appartient à qui est dans le même bloc. Ne concevoir que des règles qui décident
 sur un état antérieur et acceptent le prix courant.
+
+### 6. Toujours afficher le nombre de tokens à côté du nombre de signaux
+
+Un token produit 2 à 3 signaux, et **ils ne sont pas indépendants** : mêmes
+détenteurs, même dynamique, quelques dizaines de minutes d'écart. Si le token se
+fait ruguer, tous ses signaux tombent ensemble.
+
+Écrire « n = 419 » quand il y a 184 tokens **surestime la précision d'environ
+50 %** (racine de 2,28). Ce qui a été mesuré à cause de cette omission :
+
+| Résultat annoncé | Signaux | Tokens réels |
+|---|---|---|
+| Quintile 4 de liquidité, seule moyenne > 1 de l'enquête | 95 | **32** |
+| Filtre combiné, « meilleur résultat ex ante » | 119 | **34** |
+| Cassure du plus haut 4 h, moyenne 1,19 | 948 | 240, dont **3 portant 127 % du gain** |
+
+**Conséquence** : tout tableau de résultats affiche `signaux` ET `tokens`. Et tout
+seuil d'échantillon minimal se compte en tokens distincts, jamais en signaux.
 
 ## Phase 3 — bases propriétaires
 
