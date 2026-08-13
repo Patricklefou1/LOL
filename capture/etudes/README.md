@@ -30,13 +30,20 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
-| 21 | **Edge multi-heures** | ❌ **la cassure s'inverse au-delà de 30 min** — moyenne 0,9153 contre 1,047 pour la baseline | `multi-heures.sql` |
+
+> **Les études 15 à 18 et 21 portent toutes sur le MÊME signal** — le réveil
+> après consolidation de la 15. La 16 dit sur quelle liquidité il marche, la 17
+> comment en sortir, la 18 quels pools écarter avant d'entrer, la 21 qu'il ne
+> survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
+> refonte sur population certifiée SOL, seuls valides.
+
+| 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
-| 18 | **Surplomb d'un porteur** | ⚠️ prédit le rug (2,87 contre 0,14) ; le `sans top 3` > 1 était un artefact, voir 22 |  `filtre-surplomb.sql` |
-| 17 | **Stops au fill réel** | ❌ **aucune règle de sortie n'aide** — la perte est un rug, pas une baisse | `sortie-fill-reel.sql` |
-| 16 | **Liquidité discriminante** | ⏳ gradient monotone, taux de gagnants **44 % → 86 %** | `liquidite-discriminante.sql` |
-| 15 | Réveil après consolidation (post-graduation) | ⚠️ **médiane positive, moyenne non concluante** — échoue au retrait des extrêmes | `reveil-postgraduation.sql` |
+| 18 | **Range — quels pools écarter** | ✅ **surplomb 2,99 contre 0,14** ; pertes lourdes de 10 % à **0,6 %** | `filtre-surplomb.sql` |
+| 17 | **Range — comment sortir** | ✅ **la réintégration est la meilleure sortie** — moyenne 0,9922 contre 0,9822 sans stop | `sortie-fill-reel.sql` |
+| 16 | **Range — sur quelle liquidité** | ✅ gradient monotone, gagnants **47 % → 85 %** ; quintile 4 seule moyenne > 1 | `liquidite-discriminante.sql` |
+| 15 | **Réveil après consolidation — LE signal de range** | ⏳ **bat la baseline sur toutes les mesures** (0,9834 contre 0,9501) mais reste sous 1 | `reveil-postgraduation.sql` |
 
 ---
 
