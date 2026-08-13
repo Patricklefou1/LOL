@@ -138,7 +138,7 @@ résultat, c'est une impression.
 Le reste — médiane, moyenne tronquée, taux de gagnants, signaux — vient en
 complément. Les règles 4 et 6 ci-dessous en donnent le détail et l'origine.
 
-## Six règles non négociables pour toute étude
+## Sept règles non négociables pour toute étude
 
 Ces règles sont issues d'enquêtes qui ont coûté plusieurs heures et failli
 invalider à tort quatre études. Elles ne sont pas des préférences de style.
@@ -252,6 +252,49 @@ fait ruguer, tous ses signaux tombent ensemble.
 
 **Conséquence** : tout tableau de résultats affiche `signaux` ET `tokens`. Et tout
 seuil d'échantillon minimal se compte en tokens distincts, jamais en signaux.
+
+### 7. Bucketer sur `event_timestamp`, jamais sur `received_at`
+
+`received_at` est l'heure où **le capteur** a reçu la transaction. Elle retarde sur
+l'heure de la chaîne d'un backlog qui gonfle et se résorbe :
+
+| Heure (11 août) | Retard médian | p99 |
+|---|---|---|
+| 00:00 | 7,02 min | 8,77 |
+| 01:00 | 12,82 min | 16,40 |
+| 02:00 | 15,27 min | 16,47 |
+| 03:00 | 2,77 min | 4,15 |
+| 05:00 | 0,02 min | 6,43 |
+
+Ce n'est pas un décalage constant qu'on pourrait soustraire. Toute bougie, toute
+fenêtre glissante, toute mesure de latence bucketée sur `received_at` est fausse
+d'un montant variable.
+
+**Coût de l'omission** : une heure passée à chercher un décalage de fuseau horaire
+pour expliquer qu'une bougie utilisateur à 01:05 correspondait à « 01:16 » dans
+nos tables. La colonne `event_timestamp`, émise par le programme lui-même, était
+dans la table depuis le premier jour.
+
+**Conséquence** : `toDateTime(event_timestamp)` partout. `received_at` ne sert qu'à
+diagnostiquer le capteur.
+
+### 8. `price_sol` est incohérent avec le prix d'exécution — à trancher par RPC
+
+Rapport `(quote_amount/base_amount) / price_sol`, mesuré :
+
+| | Achats | Ventes |
+|---|---|---|
+| Tous pools SOL | 1,0282 | **1,0819** |
+
+Le prix d'exécution est au-dessus du prix des réserves **des deux côtés**. Sur un
+produit constant, une vente doit s'exécuter *sous* le spot. L'un des deux champs
+est mal décodé — réserves post-trade au lieu de pré-trade, ou `base_amount` brut
+d'une taxe de transfert.
+
+**À trancher par lecture RPC d'une transaction, pas par préférence.** Tant que ce
+n'est pas fait : les rapports de prix d'un même pool restent utilisables *si* le
+biais est constant, ce qui n'est pas acquis (p10-p90 de 1,12 à 1,32 sur un pool
+testé).
 
 ## Phase 3 — bases propriétaires
 
