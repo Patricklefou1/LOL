@@ -124,6 +124,20 @@ npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés
 
 Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
 
+## Le minimum affichable
+
+**Tout résultat comporte la MOYENNE et le NOMBRE DE TOKENS.** Sans exception, sans
+qu'il faille les demander. Un chiffre présenté sans ces deux-là n'est pas un
+résultat, c'est une impression.
+
+| Colonne | Pourquoi |
+|---|---|
+| **Moyenne** | c'est elle qui paie : 100 trades rapportent `100 × (moyenne − 1)`. La médiane n'apparaît nulle part dans ce calcul |
+| **Tokens** | c'est l'effectif réel. Un token produit 2 à 3 signaux non indépendants ; compter les signaux surestime la précision de 50 % |
+
+Le reste — médiane, moyenne tronquée, taux de gagnants, signaux — vient en
+complément. Les règles 4 et 6 ci-dessous en donnent le détail et l'origine.
+
 ## Six règles non négociables pour toute étude
 
 Ces règles sont issues d'enquêtes qui ont coûté plusieurs heures et failli
