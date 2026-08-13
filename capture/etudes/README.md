@@ -793,3 +793,108 @@ Les mints étaient à portée de RPC depuis le début.
 **Règle : quand un filtre demande de deviner une propriété, aller chercher la
 propriété.** Le coût ici : un fichier SQL, 150 lignes de TypeScript, et huit
 minutes de lecture RPC — contre trois études à refaire.
+
+
+---
+
+# Refonte complète sur population certifiée SOL
+
+Toutes les études PumpSwap refaites en joignant `pumpswap_pools` sur `est_sol = 1`.
+**Second biais corrigé au passage** : les tables de base filtraient sur « pool
+vivant ≥ 120 min et ≥ 200 trades », ce qui sélectionne sur l'AVENIR du pool. Il
+est remplacé par les seules conditions de décision, qui portent sur le passé.
+Base : 24 782 pools, 11,9 millions de barres-minute.
+
+## Étude 15 — le signal bat la baseline sur toutes les mesures
+
+| | n | Médiane | Moyenne | Sans top 3 | Sans top 10 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|---|---|
+| **Signal, 30 min** | 475 | **1,0211** | **0,9834** | **0,9784** | 0,9709 | **68,0 %** | 5,1 % |
+| Baseline, 30 min | 228 372 | 0,9957 | 0,9501 | 0,9492 | 0,9484 | 43,1 % | 9,2 % |
+| Signal, 60 min | 450 | 1,0289 | 0,9411 | 0,9348 | 0,9240 | 65,6 % | 12,7 % |
+| Signal, 120 min | 419 | 1,0482 | 0,9078 | 0,8981 | 0,8805 | 61,6 % | 21,5 % |
+
+**+3,3 points de moyenne et +2,9 de moyenne tronquée sur la baseline**, avec un
+taux de gagnants de 68 % contre 43,1 %. C'est la première fois que l'avantage
+tient sur la moyenne tronquée. Mais les deux restent **sous 1**.
+
+## Étude 16 — gradient de liquidité, monotone
+
+| Quintile | SOL | Médiane | Moyenne | Sans top 3 | Gagnants |
+|---|---|---|---|---|---|
+| 1 | 13 – 340 | 0,9967 | 0,9607 | 0,9430 | 47,4 % |
+| 2 | 341 – 619 | 1,0040 | 0,9658 | 0,9565 | 58,9 % |
+| 3 | 620 – 1 343 | 1,0153 | 0,9992 | 0,9836 | 68,4 % |
+| **4** | 1 351 – 2 870 | 1,0338 | **1,0037** | 0,9816 | 80,0 % |
+| 5 | 2 890 – 6 837 | 1,0426 | 0,9876 | 0,9759 | 85,3 % |
+
+**Le quintile 4 est la seule cellule à moyenne supérieure à 1 de toute l'enquête.**
+Sur 95 observations, et sa moyenne tronquée reste à 0,9816.
+
+## Étude 17 — la réintégration devient la meilleure sortie
+
+| Règle | Déclenche | Médiane | Moyenne | Sans top 3 | Pertes > 50 % |
+|---|---|---|---|---|---|
+| Sans stop | — | 1,0203 | 0,9822 | 0,9770 | 5,1 % |
+| Stop −10 % | 12,0 % | 1,0203 | 0,9887 | 0,9836 | 4,7 % |
+| Stop −20 % | 8,4 % | 1,0203 | 0,9857 | 0,9806 | 4,7 % |
+| **Réintégration** | 24,6 % | 1,0192 | **0,9922** | **0,9871** | 4,7 % |
+
+**Inversion complète du verdict de l'étude 17.** Sur données contaminées, la
+réintégration semblait coûter (2,271 contre 2,885) ; le ×314 d'un pool hors SOL
+écrasait tout. Sur données propres elle est **la meilleure règle**, +1 point de
+moyenne. La règle 5 reste vraie — le fill du stop en pourcentage est mauvais —
+mais la réintégration déclenche assez tôt pour y échapper.
+
+## Étude 18 — le surplomb élimine les catastrophes
+
+| | Ruggés (22) | Sains (162) |
+|---|---|---|
+| **Surplomb** | **2,994** | **0,137** |
+| Portefeuilles nouveaux | 3,63 % | 5,92 % |
+| Argent neuf (SOL) | 35,68 | 15,39 |
+| Volume à l'achat | 75,75 % | 66,63 % |
+
+| Filtre | n | Médiane | Moyenne | Sans top 3 | Gagnants | **Pertes > 50 %** |
+|---|---|---|---|---|---|---|
+| Écarté | 170 | 1,0530 | 0,9651 | 0,9561 | 81,8 % | **10,0 %** |
+| **Sans surplomb seul** | 178 | 0,9994 | 0,9912 | **0,9808** | 47,8 % | **0,6 %** |
+| Liquide et sans surplomb | 119 | 1,0186 | 0,9930 | 0,9752 | 77,3 % | 5,0 % |
+
+**Les pertes lourdes passent de 10 % à 0,6 %** — un facteur 17. Le filtre de
+surplomb ne fait pas gagner, il empêche de tout perdre.
+
+## Études 19 et 20 — intactes
+
+La cohorte de graduation est **100 % SOL (1 821 sur 1 821)**, et la signature de
+67,406 SOL est **exclusive aux pools SOL** — seconde confirmation qu'elle
+identifie bien les graduations Pump.fun. Aucun chiffre à corriger.
+
+## Étude 21 — confirmée, sans edge
+
+| | +3 h | +12 h |
+|---|---|---|
+| Cassure (moyenne) | 0,9149 | 0,8126 |
+| Baseline (moyenne) | 0,9432 | 0,8405 |
+
+---
+
+## Le résultat structurel de toute l'enquête
+
+**La baseline elle-même saigne.** Détenir un pool SOL liquide pris au hasard
+pendant 30 minutes rapporte **0,9501 en moyenne** — moins 5 %. Sur 228 372
+observations, ce n'est pas du bruit.
+
+Le meilleur signal trouvé ramène cette perte à 0,9834. Il capte **+3,3 points**,
+de façon reproductible, mesurée contre une baseline appariée. **Mais il ne
+retourne pas le signe.**
+
+Aucune stratégie acheteuse testée ne franchit 1 en moyenne tronquée. Ce n'est pas
+faute de signal : c'est que la population a une dérive négative que le signal
+réduit sans l'annuler. Deux voies restent ouvertes, et une seule est à notre
+portée aujourd'hui :
+
+1. **Isoler une sous-population à dérive positive.** Le quintile 4 de liquidité
+   (moyenne 1,0037) est le seul indice qu'elle existe. À confirmer hors
+   échantillon avant d'y croire.
+2. Être de l'autre côté du trade — hors de portée sur un AMM sans emprunt.
