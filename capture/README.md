@@ -223,6 +223,20 @@ sur un état antérieur et acceptent le prix courant.
 
 ## Phase 3 — bases propriétaires
 
+### `npm run pools` — identité des pools PumpSwap
+
+Renseigne `pumpswap_pools` en lisant les comptes Pool par RPC : `base_mint`
+(offset 43), `quote_mint` (75), `coin_creator` (211), après les 8 octets de
+discriminator Anchor. Relançable sans risque — seuls les pools absents de la
+table sont demandés, les plus actifs d'abord. Planifié toutes les heures par
+`pumpfun-pools.timer`.
+
+**Sans cette table, rien ne distingue un pool libellé en SOL d'un autre.** Sur
+31 857 pools, 7 275 ne sont pas en SOL, répartis sur 6 057 quotes distincts.
+Leurs réserves lues comme des SOL donnaient des « 54 millions », et un pool dont
+le côté base est vidé voit son prix exploser sans qu'on puisse rien y vendre.
+Toujours joindre sur `est_sol = 1` dans une étude de prix ou de réserves.
+
 ### `npm run profiles` — devs, wallets, clusters
 
 Reconstruit intégralement trois tables dérivées (ce sont des agrégats de toute

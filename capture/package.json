@@ -12,7 +12,8 @@
     "migrate": "tsx src/migrate.ts",
     "labels": "tsx src/labels.ts",
     "reconcile": "tsx src/reconcile.ts",
-    "profiles": "tsx src/profiles.ts"
+    "profiles": "tsx src/profiles.ts",
+    "pools": "tsx src/pools.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.7.0",

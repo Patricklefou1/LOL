@@ -33,7 +33,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 21 | **Edge multi-heures** | ❌ **la cassure s'inverse au-delà de 30 min** — moyenne 0,9153 contre 1,047 pour la baseline | `multi-heures.sql` |
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
-| 18 | **Surplomb d'un porteur** | ⏳ **prédit le rug** — 2,87 contre 0,14 de réserves ; premier `sans top 3` > 1 |  `filtre-surplomb.sql` |
+| 18 | **Surplomb d'un porteur** | ⚠️ prédit le rug (2,87 contre 0,14) ; le `sans top 3` > 1 était un artefact, voir 22 |  `filtre-surplomb.sql` |
 | 17 | **Stops au fill réel** | ❌ **aucune règle de sortie n'aide** — la perte est un rug, pas une baisse | `sortie-fill-reel.sql` |
 | 16 | **Liquidité discriminante** | ⏳ gradient monotone, taux de gagnants **44 % → 86 %** | `liquidite-discriminante.sql` |
 | 15 | Réveil après consolidation (post-graduation) | ⚠️ **médiane positive, moyenne non concluante** — échoue au retrait des extrêmes | `reveil-postgraduation.sql` |
@@ -717,3 +717,79 @@ ont maintenant faussé les hypothèses 16, 19 et 21, et ne s'écartent qu'à cou
 seuils fragiles — ici une bande de prix calibrée sur la cohorte de graduation.
 **Les mints sont dans les comptes de l'instruction et `resolveAccountKeys` sait
 déjà les résoudre.** C'est la correction la plus rentable qui reste à faire.
+
+
+---
+
+## Correction 22 — les mints, et ce qu'ils détruisent
+
+### Ce qui a été fait
+
+`pumpswap_pools` (table `__DB__`, `ReplacingMergeTree`), alimentée par
+`npm run pools` — lecture RPC du compte Pool, `base_mint` à l'offset 43,
+`quote_mint` à 75, `coin_creator` à 211. Timer systemd `pumpfun-pools` toutes les
+heures. La capture n'a **pas** été redémarrée : l'outil couvre déjà le passé et
+l'avenir, un redémarrage aurait créé un trou pour un gain nul.
+
+**31 857 pools identifiés, 0 illisible, 0 hors PumpSwap.** Dont **24 782 en SOL**
+et **7 275 hors SOL**, répartis sur **6 057 quotes distincts**.
+
+Validation : la cohorte de graduation ressort **100 % WSOL**, comme elle le doit.
+
+### Ce que valaient mes seuils bricolés
+
+| Mon verdict par bande de prix | Vraiment en SOL | Vraiment hors SOL | Erreur |
+|---|---|---|---|
+| Écarté | 1 | 452 | 0,2 % |
+| **Gardé** | 876 | **225** | **20,4 %** |
+
+Excellent pour écarter, mauvais pour garder. Un pool hors SOL sur cinq passait.
+
+### Ce qui survit : le gradient de liquidité (étude 16)
+
+| Quintile | SOL | Médiane | Moyenne | Sans top 3 | Gagnants |
+|---|---|---|---|---|---|
+| 1 | 13 – 340 | 0,9967 | 0,961 | 0,943 | 47,4 % |
+| 2 | 341 – 619 | 1,004 | 0,966 | 0,9565 | 58,9 % |
+| 3 | 620 – 1 343 | 1,0153 | 0,999 | 0,9836 | 68,4 % |
+| 4 | 1 351 – 2 870 | 1,0338 | **1,004** | 0,9816 | 80,0 % |
+| 5 | 2 890 – 6 837 | 1,0426 | 0,988 | 0,9759 | 85,3 % |
+
+**Monotone sur la médiane et sur le taux de gagnants**, de 47 % à 85 %. Le
+résultat tient sur données certifiées.
+
+### Ce qui meurt : le `sans top 3` de l'étude 18
+
+| Filtre combiné, groupe gardé | Avant | **Après** |
+|---|---|---|
+| n | 127 | 119 |
+| Médiane | 1,0188 | 1,0186 |
+| Moyenne | 8,258 | **0,993** |
+| **Sans top 3** | **1,0096** | **0,9752** |
+
+**Le ×314 qui portait toute la moyenne était dans un pool hors SOL.** Dix-sept
+signaux contaminés sur 484 suffisaient à faire passer le résultat phare
+au-dessus de 1. C'était exactement ce que le test de retrait des extrêmes
+signalait sans qu'on sache le lire.
+
+Le filtre garde sa valeur sur le taux de gagnants (77,3 % contre 64,4 %) mais
+**les deux moyennes sont désormais sous 1 et quasi identiques** (0,993 contre
+0,978). L'étude 18 n'est plus un résultat, c'est une piste.
+
+### Ce qui se confirme en pire : le multi-heures (étude 21)
+
+La baseline était gonflée par les pools hors SOL — 1,047 devient **0,9432** à
++3 h, puis 0,9074 et 0,8405. **Tout perd sur plusieurs heures**, la cassure
+(0,9149) comme l'achat au hasard. La conclusion ne change pas, elle durcit.
+
+---
+
+## Erreur de méthode n° 15 — un seuil n'est pas une identité
+
+Trois études ont été faussées par des pools qu'aucun seuil ne pouvait écarter
+proprement, parce que le seuil approxime ce que la donnée manquante affirmait.
+Les mints étaient à portée de RPC depuis le début.
+
+**Règle : quand un filtre demande de deviner une propriété, aller chercher la
+propriété.** Le coût ici : un fichier SQL, 150 lignes de TypeScript, et huit
+minutes de lecture RPC — contre trois études à refaire.
