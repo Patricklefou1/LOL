@@ -30,6 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 17 | **Stops au fill réel** | ❌ **aucune règle de sortie n'aide** — la perte est un rug, pas une baisse | `sortie-fill-reel.sql` |
 | 16 | **Liquidité discriminante** | ⏳ gradient monotone, taux de gagnants **44 % → 86 %** | `liquidite-discriminante.sql` |
 | 15 | Réveil après consolidation (post-graduation) | ⚠️ **médiane positive, moyenne non concluante** — échoue au retrait des extrêmes | `reveil-postgraduation.sql` |
 
@@ -396,3 +397,77 @@ queue se reproduit à un taux stable et ce qui distingue ses membres.** Un trim 
 Corollaire consigné : **`pumpswap_trades` n'a pas de colonne `quote_mint`.** Les
 pools hors SOL ne peuvent être écartés que par un seuil sur les réserves, ce qui
 est fragile. À capturer.
+
+
+---
+
+## Hypothèse 17 — les stops au fill réel : le problème n'est pas la sortie
+
+484 signaux, déclenchement lu sur les **trades bruts** (486 par fenêtre de 30 min
+à la médiane), fill au premier trade **≥ 1 seconde après** le déclencheur.
+
+### Le stop en pourcentage est inexécutable
+
+| Stop −20 % | |
+|---|---|
+| Prix du trade déclencheur | 0,9241 × le niveau visé |
+| **Fill 1 s plus tard** | **0,5697 × le niveau visé** |
+| Fill au 1er décile | 0,0007 |
+| Traversées de plus de 10 % | 40,9 % |
+| Traversées de plus de 50 % | 22,7 % |
+
+Un stop à −20 % sort en réalité à **−54 %**. Il confirme la règle gravée.
+
+### La réintégration se remplit bien — et ne sert quand même à rien
+
+Sortir quand le prix repasse sous le haut du couloir se remplit à **0,9832** du
+niveau visé, contre 0,5697 pour le stop en pourcentage : le déclenchement arrive
+à −2,6 %, avant tout effondrement. **C'est exécutable.** Mais le résultat ne
+s'améliore pas, parce que la perte qui compte n'est pas une baisse.
+
+### Ce qui tue vraiment : le retrait de liquidité
+
+61 événements où les réserves passent de **1 182 SOL à 1,24 SOL — 99,5 % retirés**.
+En une transaction, ou en cascade à l'intérieur d'une seconde. **Il n'existe aucun
+prix intermédiaire auquel vendre.** Aucun stop, aussi serré soit-il, ne protège :
+ce n'est pas un problème de latence, c'est l'absence de contrepartie.
+
+### Le résultat qui change tout : hors rugs, l'edge tient sans la queue
+
+458 signaux, les 26 rugs écartés :
+
+| Règle | Médiane | Gagnants | **Sans top 3** |
+|---|---|---|---|
+| **Sans stop** | 1,0236 | 71 % | **1,0368** |
+| Stop −20 % | 1,0236 | 71 % | 1,033 |
+| Réintégration | 1,0228 | 68,3 % | 1,030 |
+
+**+3,7 % par trade après retrait des 3 meilleurs sur 458** — indépendant de la
+queue, ce qui manquait depuis le début. Et la meilleure règle de sortie est
+**l'absence de stop** : toutes les autres coûtent.
+
+### Conclusion : c'est un problème de filtre, pas de sortie
+
+26 signaux sur 484 (5,4 %) vont à zéro et coûtent ~5,4 points de moyenne. Les 458
+autres rapportent +3,7 % de façon robuste. **Toute la viabilité tient à ne pas
+acheter les rugs.**
+
+Deux pistes testées, aucune concluante :
+
+- **Le créateur vend avant le signal** : 33,3 % des pools ruggés contre 17,8 % des
+  autres. Le double — mais sur 24 rugs, p ≈ 0,09. Suggestif, non établi.
+- **L'historique du créateur est inutilisable** : 188 créateurs distincts pour 195
+  pools, 3 récidivistes. `dev_profiles` ne peut rien sur cette population.
+
+---
+
+## Erreur de méthode n° 14 — chercher le remède du côté du symptôme
+
+On a cherché à réparer la sortie parce que les pertes apparaissaient à la sortie.
+Elles y apparaissaient seulement : elles se **décident** au retrait de liquidité,
+que la sortie ne peut pas voir venir.
+
+**Règle : avant d'optimiser une réaction, mesurer si l'événement laisse le temps
+de réagir.** Ici la réponse est non — 99,5 % de la liquidité part en une
+transaction. Trois familles de stops ont été simulées pour découvrir qu'aucune ne
+pouvait fonctionner ; la mesure du gap l'aurait dit d'emblée.
