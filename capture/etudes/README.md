@@ -37,6 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
+| 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
@@ -965,3 +966,59 @@ déduit un défaut général avant de le mesurer. Mesuré, l'effet est inverse.
 **Règle : une régularité vue dans une liste est une hypothèse, jamais un
 constat.** Ce qui saute aux yeux dans un échantillon affiché est précisément ce
 que l'œil sélectionne — la répétition se remarque, la dispersion non.
+
+
+---
+
+## Hypothèse 22 — l'explosion du bruit : tuée, et par son propre exemple
+
+### L'observation de départ
+
+FROGGY (*The Fomo Frog*) le 10 août : quatre heures plates entre 11h30 et 15h30
+UTC, puis l'activité passe de 33 à 138 trades par quart d'heure et de 26 à 79
+portefeuilles. Le prix fait **×8,8 en 45 minutes**.
+
+### Le signal perd à toutes les spécifications
+
+Bruit des 15 dernières minutes ≥ 4× son rythme des 2 heures précédentes, prix en
+hausse d'au moins 2 %, après une consolidation de largeur maximale variable.
+Horizon 30 minutes.
+
+| Largeur exigée | n | Médiane | Moyenne | Sans top 3 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|---|
+| ≤ 1,6 | 498 | 0,9917 | **0,9176** | 0,9132 | 47,6 % | 11,8 % |
+| ≤ 2,0 | 690 | 0,9736 | **0,9037** | 0,8984 | 44,5 % | 10,7 % |
+| ≤ 3,0 | 1 002 | 0,9484 | **0,8963** | 0,8924 | 39,8 % | 9,1 % |
+| aucune | 1 470 | 0,8981 | **0,9222** | 0,9008 | 35,6 % | 13,2 % |
+| **Baseline** | 208 179 | 0,9933 | **0,9634** | 0,9626 | 35,4 % | **3,7 %** |
+
+Pire que l'achat au hasard, partout, avec **trois à quatre fois plus de pertes
+lourdes**.
+
+### Pourquoi : le bruit n'est pas un précurseur, c'est l'événement
+
+Sur FROGGY, en faisant varier l'instant d'entrée :
+
+| Heure UTC | Facteur de bruit | Résultat à 30 min si on entre là |
+|---|---|---|
+| 15:38 | 0,6 | **×2,84** |
+| 15:43 | 0,8 | **×4,02** |
+| 15:58 | 2,8 | ×4,64 |
+| 16:08 | **4,0** | ×2,72 |
+| 16:18 | 3,2 | 0,94 |
+| **16:28** | **12,0** | **0,42** |
+
+**Les meilleures entrées sont celles où le bruit n'avait pas encore explosé.**
+Quand le facteur atteint le seuil de déclenchement, le gain a déjà fondu ; quand
+il atteint 12, on perd 58 %.
+
+L'afflux de participants ne précède pas la hausse, **il est la hausse** — et il
+marque la distribution, pas l'accumulation. Un signal qui attend de le voir
+arrive par construction du mauvais côté du trade.
+
+### Ce que ça confirme
+
+C'est la même leçon que la règle 5, sous une autre forme : ici la latence n'est
+pas technique mais logique. Le signal ne peut pas être observé avant d'être
+consommé. FROGGY n'était pas un contre-exemple à trouver, c'était une
+démonstration de l'impossibilité.
