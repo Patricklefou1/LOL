@@ -30,6 +30,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 12 | Suivre les tips Jito | ❌ **inversé** — 0,88 avec 10+ tips |  — |
 | 13 | Éliminer les tokens touchés par des perdants persistants | ❌ effet réel mais 10× trop faible | — |
 | 14 | Le rôle de créateur *(mesure, pas stratégie)* | ℹ️ seul rôle rentable : 67 % de gagnants | — |
+| 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
 | 18 | **Surplomb d'un porteur** | ⏳ **prédit le rug** — 2,87 contre 0,14 de réserves ; premier `sans top 3` > 1 |  `filtre-surplomb.sql` |
 | 17 | **Stops au fill réel** | ❌ **aucune règle de sortie n'aide** — la perte est un rug, pas une baisse | `sortie-fill-reel.sql` |
 | 16 | **Liquidité discriminante** | ⏳ gradient monotone, taux de gagnants **44 % → 86 %** | `liquidite-discriminante.sql` |
@@ -544,3 +545,66 @@ gain du filtre de surplomb sur ce plan.
   Non vérifié.
 - 39,6 % des pools sains dépassent aussi le seuil : le surplomb est fréquent, il
   n'est pas une condition suffisante.
+
+
+---
+
+## Hypothèse 19 — acheter toutes les graduations : tuée
+
+### La population, enfin propre
+
+La signature d'une graduation est une réserve initiale de **67,406 SOL exactement**
+— constante à la troisième décimale sur les quatre jours. Pas 85 : la migration
+prélève sa part. Cela donne **365 / 468 / 817 graduations par jour**, enfin
+cohérent avec le marché.
+
+Et surtout : **aucun biais du survivant**. Ces 1 821 pools sont suivis depuis leur
+première seconde, pas retenus parce qu'ils vivaient encore.
+
+### Horizons courts (entrée à +1 s)
+
+| Horizon | Médiane | Moyenne | Sans top 3 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|
+| 15 s | 0,9958 | 0,9802 | 0,9761 | 38,6 % | 4,2 % |
+| 30 s | 0,9997 | 0,9929 | 0,9870 | 49,0 % | 7,6 % |
+| 60 s | 1,0053 | 0,9957 | 0,9873 | 56,8 % | 12,6 % |
+| **120 s** | **1,0122** | **1,0017** | 0,9904 | 57,7 % | 18,4 % |
+| 180 s | 1,0161 | 0,9862 | 0,9716 | 55,3 % | 23,4 % |
+| 300 s | 0,9908 | 0,9685 | 0,9418 | 49,6 % | 30,1 % |
+
+Le meilleur point est à 2 minutes : médiane 1,0122, **moyenne 1,0017** — l'équilibre
+exact — et **0,9904 sans les 3 meilleurs**. Il n'y a pas d'edge, il y a un sommet
+plat au niveau zéro.
+
+### Horizons longs : carnage
+
+| Horizon | Médiane | Moyenne | Sans top 3 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|
+| 5 min | 0,9908 | 0,9685 | 0,9418 | 49,6 % | 30,1 % |
+| 15 min | 0,4075 | 0,7584 | 0,7275 | 36,9 % | 52,5 % |
+| **30 min** | **0,0880** | **0,7393** | 0,6716 | 31,7 % | 61,9 % |
+| 60 min | 0,0380 | 0,6935 | 0,6520 | 26,7 % | 69,6 % |
+
+**À 30 minutes, la médiane est 0,088** : un token sur deux a perdu plus de 91 %.
+
+### Mécanisme, vérifié
+
+- Les réserves à 30 min valent **23,93 %** des initiales, et **33,3 % des pools
+  sont vidés** (moins de 5 SOL). Sur un produit constant, des réserves divisées
+  par 4 impliquent un prix divisé par ~16 : **0,0625, cohérent avec la médiane
+  mesurée de 0,088.** Les deux chiffres se confirment l'un l'autre.
+- Le prix **monte** d'abord : +11,9 % à 1 s, +30,7 % à 30 s, +42,0 % à 60 s. Puis
+  il s'effondre. La distribution en cloche des horizons courts en est la trace.
+- Prix issu des réserves contre prix réellement exécuté sur 13,5 millions de
+  trades : rapport d'ordre 1,06, l'écart attendu du slippage. Décodeur confirmé.
+
+### Ce que cette étude change pour les autres
+
+Les hypothèses 15, 16 et 18 sont mesurées sur des pools **qui avaient déjà survécu**
+assez longtemps pour former un couloir de 30 minutes. Cette cohorte-ci montre la
+population inconditionnelle : sur 100 graduations, 62 ont perdu plus de la moitié
+en 30 minutes.
+
+**Leur edge n'est pas un edge sur le marché, c'est un edge conditionnel à la
+survie.** Ce n'est pas invalidant — filtrer est légitime — mais cela impose que
+le filtre soit applicable à l'entrée, ce que l'étude 18 a commencé à construire.
