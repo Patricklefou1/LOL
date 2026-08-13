@@ -124,9 +124,9 @@ npm run reconcile -- --verify 200     # DoD : échantillonne 200 slots capturés
 
 Les transactions récupérées passent par le **même décodeur** que la capture et sont insérées dans les mêmes tables avec `source='rpc_backfill'` (dédoublonnage par signature au préalable). Chaque trou traité est journalisé dans `gap_backfills` ; les trous > 3000 slots (panne longue) sont signalés pour traitement séparé. Le backfill historique pré-capture (Bitquery) reste optionnel et sera outillé si besoin — si la capture tourne dès maintenant, il n'est pas nécessaire.
 
-## Deux règles non négociables pour toute étude
+## Quatre règles non négociables pour toute étude
 
-Ces deux règles sont issues d'une enquête qui a coûté plusieurs heures et failli
+Ces règles sont issues d'enquêtes qui ont coûté plusieurs heures et failli
 invalider à tort quatre études. Elles ne sont pas des préférences de style.
 
 ### 1. `k = v_sol × v_tok` n'est PAS un invariant
@@ -180,6 +180,29 @@ virtuelles ont baissé, donc **l'impact à la vente est plus lourd qu'à l'achat
 entièrement déterminée par la qualité de ce stop. Le mesurer au niveau théorique
 a fait conclure à un edge de +4,7 % là où le fill réel donne −1,8 %. Mesurer le
 fill dès la première version, jamais après coup.
+
+### 4. Jamais une médiane sans la moyenne
+
+Toute performance se rapporte avec **médiane ET moyenne**, dans le même tableau,
+sans qu'il faille les demander. Y ajouter la moyenne tronquée dès qu'une queue
+existe — c'est-à-dire toujours, sur ce marché.
+
+La raison n'est pas cosmétique. Les deux mesurent des choses différentes et se
+contredisent régulièrement ici :
+
+| Cas réel | Médiane | Moyenne | Lecture |
+|---|---|---|---|
+| Étude 15 | 1,0184 | 2,804 | la queue porte tout |
+| Baseline du marché | 0,994 | 723,755 | la moyenne ne converge pas |
+| Filtre de surplomb, groupe écarté | 1,0528 | 0,961 | **gagne souvent, perd tout** |
+
+Le troisième cas est le piège : une médiane de 1,0528 et 80 % de gagnants sur une
+population dont la moyenne est 0,961. **Une médiane seule aurait fait retenir
+exactement la population qu'il fallait écarter.**
+
+Cette règle a dû être demandée deux fois avant d'être gravée. Elle est un garde-fou
+contre un biais de présentation, pas contre une erreur de calcul : les deux
+chiffres étaient calculés, seul le plus flatteur était rapporté.
 
 ## Phase 3 — bases propriétaires
 
