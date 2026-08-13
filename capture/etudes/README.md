@@ -1062,15 +1062,51 @@ l'oscillation sélectionne des marchés plus calmes, elle ne prédit pas la suit
 0,9764 / 0,9730 / 0,9548 / 0,9789. FROGGY consolidait quatre heures, mais quatre
 heures ne valent pas mieux que trente minutes.
 
-### Convergence avec l'étude 15
+### Deux règles distinctes, mesurées comme telles
 
-À 6 touches, la **largeur médiane du range vaut 1,05** — soit exactement le
-couloir de 10 % que l'étude 15 impose par décret. Les deux spécifications
-décrivent la même population, atteinte par deux chemins.
+J'avais d'abord écrit « c'est la même stratégie confirmée autrement ». C'était une
+impression, pas une mesure. Mesuré :
 
-C'est une forme de robustesse : 0,9764 ici, 0,9834 là-bas, 70,2 % et 68,0 % de
-gagnants. **Ce n'est pas une nouvelle stratégie, c'est la même, confirmée
-autrement.**
+| | Signaux | Tokens |
+|---|---|---|
+| Règle 15 — couloir ≤ 10 % | 475 | 187 |
+| Règle 23 — ≥ 6 touches, sans contrainte de largeur | 419 | 184 |
+| **Communs** | **354** | **160** |
+
+75 % des signaux de la 15 et 85 % de ceux de la 23 : un gros tronc commun, mais
+chacune a sa part propre. Et **ces parts propres divergent** :
+
+| | Signaux | Tokens | Médiane | Moyenne | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|---|
+| **15 seule** | 95 | 59 | 1,0064 | **1,0039** | 53,7 % | **3,2 %** |
+| **23 seule** | 65 | 56 | 1,0194 | **0,9810** | 56,9 % | 7,7 % |
+| Les deux | 354 | 154 | 1,0244 | **0,9756** | **72,6 %** | 5,9 % |
+
+Ce qui **contredit l'hypothèse** : les ranges sans oscillation — plats ou en
+dérive — font la meilleure moyenne. L'oscillation apporte le taux de gagnants,
+pas le gain. Sur 95 signaux et 59 tokens seulement, donc à ne pas surinterpréter.
+
+*(Écart de comptage à noter : `tmp_osc` couvre les minutes 31 à 419, `tmp_ps_ok`
+va jusqu'à 480. 26 signaux de la règle 15 tombent hors du champ commun.)*
+
+### Signal et token ne sont pas la même unité
+
+| Configuration | Signaux | **Tokens** | Signaux par token |
+|---|---|---|---|
+| Règle 23, 30 min, ≥ 6 touches | 419 | **184** | 2,28 |
+| Règle 23, 30 min, ≥ 3 touches | 1 369 | **424** | 3,23 |
+| Règle 23, 240 min, ≥ 6 touches | 180 | **113** | 1,59 |
+| Règle 15 | 475 | **187** | 2,54 |
+
+Un token produit 2 à 3 signaux, et **ils ne sont pas indépendants** : même token,
+mêmes détenteurs, à quelques dizaines de minutes d'intervalle. Si le token se fait
+ruguer, tous ses signaux tombent ensemble.
+
+**Écrire « n = 419 » surestime donc la précision d'environ 50 %** (racine de 2,28).
+L'effectif utile est 184. C'est ce qui a permis à la cassure des 4 heures de
+paraître robuste sur 948 signaux quand 3 tokens sur 240 portaient 127 % du gain.
+
+**Règle : compter en tokens distincts, jamais en signaux.**
 
 ### Une erreur de spécification, et le piège qu'elle a révélé
 
