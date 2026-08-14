@@ -80,7 +80,9 @@ async function main(): Promise<void> {
         let mint = "";
         for (const ev of decodePumpEvents(info)) {
           decoded++;
-          if (!mint) mint = ev.mint;
+          // Les evenements auxiliaires ne portent pas de mint : ils ne peuvent
+          // pas renseigner celui de tx_costs.
+          if (!mint && ev.kind !== "other") mint = ev.mint;
           if (ev.kind === "trade") {
             health.note("trade");
             sink.push("trades", {
