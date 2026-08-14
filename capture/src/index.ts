@@ -113,7 +113,7 @@ async function main(): Promise<void> {
               symbol: ev.symbol,
               uri: ev.uri,
             });
-          } else {
+          } else if (ev.kind === "complete") {
             health.note("complete");
             sink.push("completions", {
               slot,
@@ -124,6 +124,10 @@ async function main(): Promise<void> {
               bonding_curve: ev.bondingCurve,
               event_timestamp: jsonU64(ev.timestamp),
             });
+          } else {
+            // événement auxiliaire reconnu (frais créateur, extension de compte,
+            // migration…) : compté pour le monitoring, contenu dans raw_transactions
+            health.note("other_event");
           }
         }
         if (exec) {

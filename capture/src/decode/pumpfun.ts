@@ -18,6 +18,28 @@ const DISC_CREATE = eventDiscriminator("CreateEvent");
 const DISC_TRADE = eventDiscriminator("TradeEvent");
 const DISC_COMPLETE = eventDiscriminator("CompleteEvent");
 
+// Événements auxiliaires du programme (frais créateur, extensions de comptes,
+// migration PumpSwap, incentives…) : reconnus et comptés mais non stockés en
+// tables dédiées — leur contenu reste disponible dans raw_transactions.
+// Un nom erroné produit un discriminator qui ne matchera jamais : sans danger.
+const OTHER_EVENT_NAMES = [
+  "CollectCreatorFeeEvent",
+  "SetCreatorEvent",
+  "AdminSetCreatorEvent",
+  "ExtendAccountEvent",
+  "SetParamsEvent",
+  "UpdateGlobalAuthorityEvent",
+  "CompletePumpAmmMigrationEvent",
+  "SetMetaplexCreatorEvent",
+  "SyncUserVolumeAccumulatorEvent",
+  "InitUserVolumeAccumulatorEvent",
+  "ClaimTokenIncentivesEvent",
+  "AdminUpdateTokenIncentivesEvent",
+];
+const OTHER_DISCS = new Map<string, string>(
+  OTHER_EVENT_NAMES.map((n) => [eventDiscriminator(n).toString("hex"), n]),
+);
+
 class Reader {
   private off = 0;
   constructor(private buf: Buffer) {}
@@ -89,7 +111,12 @@ export interface CompleteEvent {
   timestamp: bigint;
 }
 
-export type PumpEvent = CreateEvent | TradeEvent | CompleteEvent;
+export interface OtherEvent {
+  kind: "other";
+  name: string;
+}
+
+export type PumpEvent = CreateEvent | TradeEvent | CompleteEvent | OtherEvent;
 
 // Le programme a ajouté des champs de fin de structure au fil des versions
 // (creator, fees…) : on parse le préfixe stable et on tolère les octets restants.
@@ -135,6 +162,10 @@ function parseEvent(buf: Buffer): PumpEvent | null {
         bondingCurve: r.pubkey(),
         timestamp: r.remaining() >= 8 ? r.i64() : 0n,
       };
+    }
+    const otherName = OTHER_DISCS.get(disc.toString("hex"));
+    if (otherName) {
+      return { kind: "other", name: otherName };
     }
   } catch {
     return null;

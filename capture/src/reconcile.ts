@@ -178,7 +178,7 @@ function insertTx(
         symbol: ev.symbol,
         source: "rpc_backfill",
       });
-    } else {
+    } else if (ev.kind === "complete") {
       rows.completions.push({
         slot,
         signature,
@@ -190,6 +190,7 @@ function insertTx(
         source: "rpc_backfill",
       });
     }
+    // kind === "other" : archivé dans raw uniquement, comme en capture live
   }
   return n;
 }

@@ -72,6 +72,7 @@ export class Health {
           tx_per_s: rate("tx"),
           trades_per_s: rate("trade"),
           creates_per_s: rate("create"),
+          other_per_s: rate("other_event"),
           completes_total: this.counters.complete ?? 0,
           failed_per_s: rate("failed"),
           // Transactions qui référencent le compte du programme sans l'invoquer :
