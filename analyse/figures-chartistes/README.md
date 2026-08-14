@@ -34,6 +34,9 @@ Options utiles :
 | `--echantillon 150` | tokens max par fenêtre (échantillon déterministe SHA-1) |
 | `--bougies geckoterminal` | chandelles post-graduation sans clé (30 req/min) |
 | `--minutes-post 720` | profondeur du chart post-graduation (sources API) |
+| `--rentabilite` | étude d'événement : rendement **net** par figure (achat à la confirmation, sortie au stop d'invalidation ou à l'horizon), classement par médiane nette et verdict « figure la plus rentable » par fenêtre |
+| `--couts 0.03` | coûts d'un aller-retour (frais + slippage) pour le mode rentabilité |
+| `--horizons 15,60,240` | horizons de sortie en minutes ; `--horizon-cle` fixe celui du classement (défaut : le médian) |
 | `--verbeux` | figures détectées token par token, sur stderr |
 
 Variables d'environnement : `CLICKHOUSE_URL`, `CLICKHOUSE_USER`,
@@ -44,11 +47,17 @@ Variables d'environnement : `CLICKHOUSE_URL`, `CLICKHOUSE_USER`,
 
 ```bash
 python3 figures_chartistes.py --autotest
-# Autotest : 13/13 cas OK
+# Autotest : 15/15 cas OK
 ```
 
 L'autotest fabrique une série synthétique par figure (plus un témoin baissier)
-et vérifie que chaque détecteur reconnaît la sienne.
+et vérifie que chaque détecteur reconnaît la sienne, puis valide le simulateur
+de rentabilité sur un drapeau gagnant et un double creux stoppé à
+l'invalidation.
+
+Les niveaux d'entrée / invalidation / objectif de chaque figure sont
+documentés dans [../../pumpfun-figures-chartistes.md](../../pumpfun-figures-chartistes.md)
+(§ 4 bis).
 
 ## Sorties
 

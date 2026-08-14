@@ -112,8 +112,74 @@ résultats :
 Corollaire pour la recherche d'edge (cf.
 [pumpfun-trouver-un-edge.md](pumpfun-trouver-un-edge.md)) : « la figure la
 plus représentée » n'est pas « la figure la plus rentable ». La fréquence est
-une statistique descriptive ; l'edge se teste en étude d'événement (rendement
-forward conditionnel à la figure, coûts inclus) sur la matrice `token_minute`.
+une statistique descriptive ; l'edge se teste en étude d'événement — c'est le
+mode `--rentabilite` du § 4 bis.
+
+## 4 bis. Quelle figure est la plus rentable ? — entrée, invalidation, mesure
+
+### Les règles de trade codées dans l'outil
+
+Chaque occurrence détectée porte trois niveaux : **entrée** (clôture de la
+barre de confirmation), **invalidation** (le stop : si le prix y revient, la
+figure est annulée — on sort), **objectif** (la « mesure » classique de la
+figure). Ce sont les définitions standard de l'analyse technique, appliquées
+mécaniquement :
+
+| Figure | Entrée (confirmation) | Invalidation (stop) | Objectif classique |
+|---|---|---|---|
+| **Drapeau / fanion haussier** | cassure du sommet du mât | clôture sous le **bas de la consolidation** (invalidation anticipée : retracement > 50 % du mât) | mât reporté depuis la cassure |
+| **Canal ascendant** | barre suivant le dernier pivot du canal | clôture sous le **dernier creux montant** (la cassure du bas du canal tue la structure) | largeur du canal |
+| **Triangle ascendant** | cassure de la résistance plate | clôture sous le **dernier creux montant** | hauteur du triangle |
+| **Rectangle haussier** | cassure du haut du range | retour sous le **support du range** (un simple retour sous la résistance cassée est déjà un avertissement de fausse cassure) | hauteur du range |
+| **Biseau descendant** | cassure de la ligne des sommets | clôture sous le **dernier creux du biseau** | retour au sommet du biseau |
+| **Double / triple creux** | cassure de la ligne de cou | clôture sous le **plus bas des creux** | hauteur creux → cou |
+| **ETE inversée** | cassure de la ligne de cou (pente incluse) | clôture sous l'**épaule droite** (sous la tête = invalidation « dure », plus lointaine) | hauteur tête → cou |
+| **Tasse avec anse** | cassure du bord de la tasse | clôture sous le **creux de l'anse** (anse > 50 % de la profondeur = figure déjà invalide) | profondeur de la tasse |
+| **Fond arrondi** | retour sur le bord du U | clôture sous le **fond du U** | profondeur du U |
+| **Creux en V** | reprise de 80 % de la chute | clôture sous le **creux du V** | retour au sommet d'origine |
+
+Deux invalidations transversales propres à Pump.fun, prioritaires sur tout
+niveau graphique (cf. [pumpfun-donnees-strategie.md](pumpfun-donnees-strategie.md),
+§ 3.1) : **vente du dev** et bascule du net flow 30 s en négatif avec pic de
+vendeurs uniques — on ne « laisse pas travailler » une figure contre ces
+signaux.
+
+### La mesure
+
+```bash
+python3 figures_chartistes.py --source clickhouse --rentabilite \
+    --couts 0.03 --horizons 15,60,240 --markdown resultats.md
+```
+
+Pour chaque occurrence : achat à la confirmation, sortie au stop si
+l'invalidation est touchée avant l'horizon, sinon à l'horizon ; rendement
+**net** des coûts (`--couts`, défaut 3 % l'aller-retour : ~1 % de frais
+protocole × 2 + slippage/priorité). Le classement par fenêtre se fait sur la
+**médiane nette à l'horizon clé** (défaut 60 min, `--horizon-cle`), avec
+n ≥ 5 occurrences exigées pour le verdict ; sont aussi affichés le taux de
+stop, le taux d'objectif atteint et le % de trades gagnants. La médiane est
+préférée à la moyenne : sur ce marché en loi de puissance, la moyenne est
+dominée par 2–3 trades extrêmes (§ 7 du référentiel de données).
+
+Limites spécifiques : remplissage au niveau exact du stop (optimiste sur un
+memecoin illiquide — durcir `--couts` pour compenser), horizons au-delà de la
+fin de série portés à plat, et sur la phase courbe les horizons longs sont
+tronqués à la graduation.
+
+### Ce que dit la littérature (priors, pas des mesures Pump.fun)
+
+Sur les marchés actions (statistiques de Bulkowski, *Encyclopedia of Chart
+Patterns*), les figures haussières les mieux classées en performance
+post-cassure sont le **drapeau serré après très forte hausse** (« high & tight
+flag », historiquement la meilleure), l'**ETE inversée** et la **tasse avec
+anse** — avec des taux d'échec qui doublent quand la cassure n'est pas
+confirmée ou que le retracement dépasse les seuils d'invalidation ci-dessus.
+Transposé à la mécanique Pump.fun : le candidat structurel n°1 en phase courbe
+est précisément le **drapeau haussier post-mât** (c'est la forme canonique
+d'une courbe qui gradue : jambe, pause peu profonde, cassure), et en
+post-graduation le **double creux** sur le dump de migration. À confirmer ou
+infirmer par la commande ci-dessus — et un même classement doit être re-mesuré
+régulièrement : la demi-vie d'un edge ici se compte en semaines.
 
 ## 5. Limites connues
 

@@ -616,18 +616,27 @@ def _fenetres_pivots(pivots, tailles=(4, 5, 6, 7, 8)):
 
 
 def detecte_canal_ascendant(ctx):
+    """Chaque occurrence : {i (barre de confirmation), entree, stop, hauteur}.
+    Entrée à la barre qui suit le dernier pivot du canal ; invalidation sous
+    le dernier creux montant ; objectif = largeur du canal."""
+    occs = {}
     for w in _fenetres_pivots(ctx.pivots):
         hs = [p.p for p in w if p.typ == "H"]
         ls = [p.p for p in w if p.typ == "L"]
         if len(hs) >= 2 and len(ls) >= 2:
             if all(b >= a * 1.03 for a, b in zip(hs, hs[1:])) and \
                all(b >= a * 1.03 for a, b in zip(ls, ls[1:])):
-                return True
-    return False
+                i = w[-1].i + 1
+                if i < len(ctx.fermetures):
+                    occs.setdefault(i, {"i": i, "entree": ctx.fermetures[i],
+                                        "stop": ls[-1], "hauteur": hs[-1] - ls[-1]})
+    return list(occs.values())
 
 
 def detecte_drapeau_et_fanion(ctx):
-    drapeau = fanion = False
+    """Entrée à la cassure du sommet du mât ; invalidation sous le bas de la
+    consolidation ; objectif = mât reporté (mesure classique du drapeau)."""
+    drapeau, fanion = {}, {}
     piv = ctx.pivots
     for k in range(len(piv) - 1):
         a, b = piv[k], piv[k + 1]
@@ -666,16 +675,19 @@ def detecte_drapeau_et_fanion(ctx):
         # plus robuste au bruit qu'une pente par barre
         derive_h = pente_h * (len(seg_h) - 1) / b.p
         derive_l = pente_l * (len(seg_l) - 1) / b.p
+        occ = {"i": j_cassure, "entree": ctx.fermetures[j_cassure],
+               "stop": min(ctx.bas[b.i + 1:j_cassure]), "hauteur": pole_h}
         if derive_h <= -0.015 and derive_l >= 0.015:
-            fanion = True
+            fanion.setdefault(j_cassure, occ)
         elif derive_h <= 0.02:
-            drapeau = True
-        if drapeau and fanion:
-            break
-    return drapeau, fanion
+            drapeau.setdefault(j_cassure, occ)
+    return list(drapeau.values()), list(fanion.values())
 
 
 def detecte_triangle_ascendant(ctx):
+    """Entrée à la cassure de la résistance plate ; invalidation sous le
+    dernier creux montant ; objectif = hauteur du triangle."""
+    occs = {}
     for w in _fenetres_pivots(ctx.pivots):
         hs = [p for p in w if p.typ == "H"]
         ls = [p for p in w if p.typ == "L"]
@@ -688,12 +700,17 @@ def detecte_triangle_ascendant(ctx):
         prix_ls = [p.p for p in ls]
         if not all(b >= a * 1.02 for a, b in zip(prix_ls, prix_ls[1:])):
             continue
-        if ctx.cassure_apres(w[-1].i, haut * 1.005) is not None:
-            return True
-    return False
+        j = ctx.cassure_apres(w[-1].i, haut * 1.005)
+        if j is not None:
+            occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                "stop": prix_ls[-1], "hauteur": haut - prix_ls[0]})
+    return list(occs.values())
 
 
 def detecte_rectangle_haussier(ctx):
+    """Entrée à la cassure du haut du range ; invalidation sous le support ;
+    objectif = hauteur du range."""
+    occs = {}
     for w in _fenetres_pivots(ctx.pivots):
         hs = [p.p for p in w if p.typ == "H"]
         ls = [p.p for p in w if p.typ == "L"]
@@ -706,12 +723,17 @@ def detecte_rectangle_haussier(ctx):
             continue
         if any(abs(l - S) / S > 0.04 for l in ls):
             continue
-        if ctx.cassure_apres(w[-1].i, R * 1.01) is not None:
-            return True
-    return False
+        j = ctx.cassure_apres(w[-1].i, R * 1.01)
+        if j is not None:
+            occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                "stop": S, "hauteur": R - S})
+    return list(occs.values())
 
 
 def detecte_biseau_descendant(ctx):
+    """Entrée à la cassure de la ligne des sommets ; invalidation sous le
+    dernier creux du biseau ; objectif = hauteur du biseau à son ouverture."""
+    occs = {}
     for w in _fenetres_pivots(ctx.pivots):
         hs = [p for p in w if p.typ == "H"]
         ls = [p for p in w if p.typ == "L"]
@@ -733,11 +755,17 @@ def detecte_biseau_descendant(ctx):
         for j in range(w[-1].i + 1, fin):
             ligne = b_p + pente * (j - b_i)
             if ligne > 0 and ctx.fermetures[j] > ligne * 1.005:
-                return True
-    return False
+                occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                    "stop": ls[-1].p,
+                                    "hauteur": hs[0].p - ls[-1].p})
+                break
+    return list(occs.values())
 
 
 def detecte_double_creux(ctx):
+    """Entrée à la cassure de la ligne de cou ; invalidation sous le plus bas
+    des deux creux ; objectif = hauteur creux → cou."""
+    occs = {}
     piv = ctx.pivots
     for k in range(len(piv) - 2):
         l1, h, l2 = piv[k], piv[k + 1], piv[k + 2]
@@ -747,12 +775,18 @@ def detecte_double_creux(ctx):
             continue
         if h.p < max(l1.p, l2.p) * (1 + PROF_MIN_DOUBLE):
             continue
-        if ctx.cassure_apres(l2.i, h.p * 1.005, 60) is not None:
-            return True
-    return False
+        j = ctx.cassure_apres(l2.i, h.p * 1.005, 60)
+        if j is not None:
+            plancher = min(l1.p, l2.p)
+            occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                "stop": plancher, "hauteur": h.p - plancher})
+    return list(occs.values())
 
 
 def detecte_triple_creux(ctx):
+    """Entrée à la cassure du plus haut des deux pics ; invalidation sous le
+    plus bas des trois creux ; objectif = hauteur creux → cou."""
+    occs = {}
     piv = ctx.pivots
     for k in range(len(piv) - 4):
         w = piv[k:k + 5]
@@ -764,12 +798,17 @@ def detecte_triple_creux(ctx):
         cou = max(w[1].p, w[3].p)
         if cou < min(creux) * (1 + PROF_MIN_DOUBLE):
             continue
-        if ctx.cassure_apres(w[4].i, cou * 1.005, 60) is not None:
-            return True
-    return False
+        j = ctx.cassure_apres(w[4].i, cou * 1.005, 60)
+        if j is not None:
+            occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                "stop": min(creux), "hauteur": cou - min(creux)})
+    return list(occs.values())
 
 
 def detecte_ete_inversee(ctx):
+    """Entrée à la cassure de la ligne de cou (pente incluse) ; invalidation
+    sous l'épaule droite ; objectif = hauteur tête → cou."""
+    occs = {}
     piv = ctx.pivots
     for k in range(len(piv) - 4):
         w = piv[k:k + 5]
@@ -787,12 +826,17 @@ def detecte_ete_inversee(ctx):
         for j in range(e2.i + 1, fin):
             cou = c2.p + pente * (j - c2.i)
             if cou > 0 and ctx.fermetures[j] > cou * 1.005:
-                return True
-    return False
+                occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                    "stop": e2.p, "hauteur": cou - tete.p})
+                break
+    return list(occs.values())
 
 
 def detecte_tasse_et_fond(ctx):
-    tasse = fond = False
+    """Tasse : entrée à la cassure du bord, invalidation sous le creux de
+    l'anse. Fond arrondi : entrée au retour sur le bord, invalidation sous le
+    fond du U. Objectif = profondeur de la figure."""
+    tasse, fond = {}, {}
     n = len(ctx.fermetures)
     for p1 in (p for p in ctx.pivots if p.typ == "H"):
         a = p1.i
@@ -813,7 +857,8 @@ def detecte_tasse_et_fond(ctx):
         courbure, r2, sommet = _parabole(ctx.fermetures[a:r + 1])
         if courbure <= 0 or r2 < TASSE_R2_MIN or not (0.25 <= sommet <= 0.75):
             continue
-        fond = True
+        fond.setdefault(r, {"i": r, "entree": ctx.fermetures[r],
+                            "stop": mini, "hauteur": bord - mini})
         limite = min(n, r + max(5, (r - a) // 2) + 1)
         creux_anse = bord
         for j in range(r + 1, limite):
@@ -821,14 +866,16 @@ def detecte_tasse_et_fond(ctx):
             if creux_anse < bord * (1 - 0.5 * prof):
                 break  # repli trop profond : ce n'est plus une anse
             if ctx.fermetures[j] > bord * 1.01 and j - r >= 2:
-                tasse = True
+                tasse.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                     "stop": creux_anse, "hauteur": bord - mini})
                 break
-        if tasse:
-            break
-    return tasse, fond
+    return list(tasse.values()), list(fond.values())
 
 
 def detecte_creux_en_v(ctx):
+    """Entrée quand la reprise a regagné 80 % de la chute ; invalidation sous
+    le creux du V ; objectif = retour au sommet d'origine (le reste du V)."""
+    occs = {}
     piv = ctx.pivots
     n = len(ctx.fermetures)
     for k in range(len(piv) - 1):
@@ -840,52 +887,136 @@ def detecte_creux_en_v(ctx):
             continue
         cible = l.p + REPRISE_V * (h.p - l.p)
         fin = min(n, l.i + 1 + LARGEUR_V_MAX)
-        if any(ctx.fermetures[j] >= cible for j in range(l.i + 1, fin)):
-            return True
-    return False
+        for j in range(l.i + 1, fin):
+            if ctx.fermetures[j] >= cible:
+                occs.setdefault(j, {"i": j, "entree": ctx.fermetures[j],
+                                    "stop": l.p,
+                                    "hauteur": max(h.p - ctx.fermetures[j], 0.0)})
+                break
+    return list(occs.values())
 
 
 def analyser_token(bougies, seuil_force=None):
-    """→ (ensemble de codes figures, nb_bougies, nb_pivots) ou None si trop court."""
+    """→ (figures présentes, occurrences par figure, nb_bougies, nb_pivots, ctx)
+    ou None si la série est trop courte. Chaque occurrence porte sa barre de
+    confirmation, son prix d'entrée, son niveau d'invalidation et son objectif."""
     bougies = preparer(bougies)
     if len(bougies) < MIN_BOUGIES:
         return None
     ctx = Contexte(bougies, seuil_force)
-    if len(ctx.pivots) < MIN_PIVOTS:
-        return set(), len(bougies), len(ctx.pivots)
-    trouvees = set()
-    if detecte_canal_ascendant(ctx):
-        trouvees.add("canal_ascendant")
-    drapeau, fanion = detecte_drapeau_et_fanion(ctx)
-    if drapeau:
-        trouvees.add("drapeau_haussier")
-    if fanion:
-        trouvees.add("fanion_haussier")
-    if detecte_triangle_ascendant(ctx):
-        trouvees.add("triangle_ascendant")
-    if detecte_rectangle_haussier(ctx):
-        trouvees.add("rectangle_haussier")
-    if detecte_biseau_descendant(ctx):
-        trouvees.add("biseau_descendant")
-    if detecte_double_creux(ctx):
-        trouvees.add("double_creux")
-    if detecte_triple_creux(ctx):
-        trouvees.add("triple_creux")
-    if detecte_ete_inversee(ctx):
-        trouvees.add("ete_inversee")
-    tasse, fond = detecte_tasse_et_fond(ctx)
-    if tasse:
-        trouvees.add("tasse_anse")
-    if fond:
-        trouvees.add("fond_arrondi")
-    if detecte_creux_en_v(ctx):
-        trouvees.add("creux_en_v")
-    # hiérarchie : la figure la plus spécifique absorbe sa version générale
+    occs = {code: [] for code, _, _ in FIGURES}
+    if len(ctx.pivots) >= MIN_PIVOTS:
+        occs["canal_ascendant"] = detecte_canal_ascendant(ctx)
+        occs["drapeau_haussier"], occs["fanion_haussier"] = detecte_drapeau_et_fanion(ctx)
+        occs["triangle_ascendant"] = detecte_triangle_ascendant(ctx)
+        occs["rectangle_haussier"] = detecte_rectangle_haussier(ctx)
+        occs["biseau_descendant"] = detecte_biseau_descendant(ctx)
+        occs["double_creux"] = detecte_double_creux(ctx)
+        occs["triple_creux"] = detecte_triple_creux(ctx)
+        occs["ete_inversee"] = detecte_ete_inversee(ctx)
+        occs["tasse_anse"], occs["fond_arrondi"] = detecte_tasse_et_fond(ctx)
+        occs["creux_en_v"] = detecte_creux_en_v(ctx)
+    trouvees = {code for code, liste in occs.items() if liste}
+    # hiérarchie (comptage de fréquence) : la figure la plus spécifique
+    # absorbe sa version générale ; les occurrences restent toutes simulables
     if "triple_creux" in trouvees:
         trouvees.discard("double_creux")
     if "tasse_anse" in trouvees:
         trouvees.discard("fond_arrondi")
-    return trouvees, len(bougies), len(ctx.pivots)
+    return trouvees, occs, len(bougies), len(ctx.pivots), ctx
+
+
+# ---------------------------------------------------------------------------
+# Étude d'événement : rentabilité par figure, stop à l'invalidation
+# ---------------------------------------------------------------------------
+
+def _pas_serie(ctx):
+    """Durée d'une barre en secondes (60 ou 300 après ré-échantillonnage)."""
+    ts = [b.t for b in ctx.bougies]
+    if len(ts) < 2:
+        return 60
+    diffs = sorted(b - a for a, b in zip(ts, ts[1:]) if b > a)
+    return diffs[len(diffs) // 2] if diffs else 60
+
+
+def simuler_occurrence(ctx, occ, horizons_barres, couts):
+    """Simule un trade : achat à la clôture de confirmation, sortie au stop
+    (niveau d'invalidation) s'il est touché avant, sinon à l'horizon.
+    → {horizon: rendement net, 'stoppee': bool, 'objectif': bool} ou None."""
+    i, entree, stop = occ["i"], occ["entree"], occ["stop"]
+    if entree <= 0 or stop >= entree:
+        return None
+    n = len(ctx.fermetures)
+    h_max = max(horizons_barres.values())
+    fin = min(n - 1, i + h_max)
+    stop_j = None
+    for j in range(i + 1, fin + 1):
+        if ctx.bas[j] <= stop:
+            stop_j = j
+            break
+    objectif = entree + occ.get("hauteur", 0.0)
+    objectif_ok = False
+    borne = stop_j if stop_j is not None else fin
+    for j in range(i + 1, borne + 1):
+        if ctx.hauts[j] >= objectif:
+            objectif_ok = True
+            break
+    res = {"stoppee": stop_j is not None, "objectif": objectif_ok}
+    for nom, hb in horizons_barres.items():
+        j_fin = min(n - 1, i + hb)
+        if stop_j is not None and stop_j <= j_fin:
+            brut = stop / entree - 1.0
+        else:
+            brut = ctx.fermetures[j_fin] / entree - 1.0
+        res[nom] = brut - couts
+    return res
+
+
+def simuler_token(ctx, occs, horizons_min, couts):
+    """→ {figure: [résultats d'occurrence]} pour un token."""
+    pas = _pas_serie(ctx)
+    horizons_barres = {str(h): max(1, round(h * 60 / pas)) for h in horizons_min}
+    sortie = {}
+    for code, liste in occs.items():
+        for occ in liste:
+            r = simuler_occurrence(ctx, occ, horizons_barres, couts)
+            if r is not None:
+                sortie.setdefault(code, []).append(r)
+    return sortie
+
+
+def _mediane(vals):
+    vals = sorted(vals)
+    n = len(vals)
+    if not n:
+        return 0.0
+    return vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+
+
+def agreger_rentabilite(simulations, horizons_min):
+    """Agrège les résultats d'occurrences par figure sur une fenêtre.
+    → {figure: {occurrences, taux_stop, taux_objectif,
+                horizons: {h: {mediane, moyenne, taux_gain}}}}"""
+    sortie = {}
+    for code, liste in simulations.items():
+        if not liste:
+            continue
+        n = len(liste)
+        entree = {
+            "occurrences": n,
+            "taux_stop": round(100.0 * sum(1 for r in liste if r["stoppee"]) / n, 1),
+            "taux_objectif": round(100.0 * sum(1 for r in liste if r["objectif"]) / n, 1),
+            "horizons": {},
+        }
+        for h in horizons_min:
+            nets = [r[str(h)] for r in liste]
+            entree["horizons"][str(h)] = {
+                "mediane": round(_mediane(nets), 4),
+                "moyenne": round(sum(nets) / n, 4),
+                "taux_gain": round(100.0 * sum(1 for x in nets if x > 0) / n, 1),
+            }
+        sortie[code] = entree
+    return sortie
 
 
 # ---------------------------------------------------------------------------
@@ -927,6 +1058,7 @@ def analyser_fenetre(fen, args, sources, verbeux=False):
         print(f"   échantillon déterministe de {len(lot)} tokens", file=sys.stderr)
 
     compte = {code: 0 for code, _, _ in FIGURES}
+    simulations = {}
     analyses = trop_courts = 0
     total_figures = 0
     for mint, quand in lot:
@@ -939,17 +1071,21 @@ def analyser_fenetre(fen, args, sources, verbeux=False):
         if resultat is None:
             trop_courts += 1
             continue
-        figures, nb, npiv = resultat
+        figures, occs, nb, npiv, ctx = resultat
         analyses += 1
         total_figures += len(figures)
         for code in figures:
             compte[code] += 1
+        if getattr(args, "rentabilite", False):
+            for code, liste in simuler_token(ctx, occs, args.horizons_min,
+                                             args.couts).items():
+                simulations.setdefault(code, []).extend(liste)
         if verbeux:
             noms = ", ".join(sorted(figures)) or "aucune"
             print(f"   {mint[:8]}… : {nb} bougies, {npiv} pivots → {noms}",
                   file=sys.stderr)
 
-    return {
+    sortie = {
         "libelle": fen["libelle"],
         "debut": t0.isoformat(),
         "fin": t1.isoformat(),
@@ -960,6 +1096,9 @@ def analyser_fenetre(fen, args, sources, verbeux=False):
         "figures_par_token": round(total_figures / analyses, 2) if analyses else 0.0,
         "compte": compte,
     }
+    if getattr(args, "rentabilite", False):
+        sortie["rentabilite"] = agreger_rentabilite(simulations, args.horizons_min)
+    return sortie
 
 
 def bougies_clickhouse_prefetch(ch, lot):
@@ -1037,6 +1176,22 @@ def construire_sources(args):
 # Rendu
 # ---------------------------------------------------------------------------
 
+def classement_rentabilite(r, horizon_cle, min_occ=5):
+    """Classement des figures par rendement net médian à l'horizon clé.
+    Les figures sous min_occ occurrences sont classées mais marquées peu fiables."""
+    rent = r.get("rentabilite") or {}
+    lignes = []
+    for code, stats in rent.items():
+        h = stats["horizons"].get(str(horizon_cle))
+        if h is None:
+            continue
+        lignes.append((code, stats, h))
+    lignes.sort(key=lambda x: -x[2]["mediane"])
+    verdict = next(((c, s, h) for c, s, h in lignes
+                    if s["occurrences"] >= min_occ), None)
+    return lignes, verdict
+
+
 def rendu_markdown(resultats, meta):
     lignes = [
         "# Figures chartistes haussières — tokens gradués Pump.fun",
@@ -1075,10 +1230,41 @@ def rendu_markdown(resultats, meta):
         if rang == 0:
             lignes.append("| — | aucune figure détectée | 0 | 0 % |")
         lignes.append("")
+        if "rentabilite" in r:
+            hcle = meta["horizon_cle"]
+            hs = meta["horizons"]
+            lignes += [
+                f"### Rentabilité (entrée à la confirmation, stop à l'invalidation, "
+                f"coûts {meta['couts'] * 100:.1f} % par aller-retour)",
+                "",
+                "| Rang | Figure | Occurr. | % stoppées | % objectif | "
+                + " | ".join(f"méd. nette {h} min" for h in hs)
+                + f" | % gagnants ({hcle} min) |",
+                "|---:|---|---:|---:|---:|" + "---:|" * (len(hs) + 1),
+            ]
+            classement_r, verdict = classement_rentabilite(r, hcle)
+            for rg, (code, stats, h) in enumerate(classement_r, 1):
+                meds = " | ".join(
+                    f"{stats['horizons'][str(x)]['mediane'] * 100:+.1f} %" for x in hs)
+                note = "" if stats["occurrences"] >= 5 else " ⚠ n < 5"
+                lignes.append(
+                    f"| {rg} | {NOMS[code]}{note} | {stats['occurrences']} | "
+                    f"{stats['taux_stop']:.0f} % | {stats['taux_objectif']:.0f} % | "
+                    f"{meds} | {h['taux_gain']:.0f} % |")
+            if not classement_r:
+                lignes.append("| — | aucune occurrence simulable | | | | | |")
+            if verdict:
+                code, stats, h = verdict
+                lignes += ["",
+                           f"**Figure la plus rentable de la fenêtre** (médiane nette à "
+                           f"{hcle} min, ≥ 5 occurrences) : **{NOMS[code]}** "
+                           f"({h['mediane'] * 100:+.1f} %, {stats['occurrences']} occurrences, "
+                           f"{stats['taux_stop']:.0f} % stoppées)."]
+            lignes.append("")
     return "\n".join(lignes)
 
 
-def rendu_console(resultats):
+def rendu_console(resultats, meta=None):
     for r in resultats:
         print(f"\n=== {r['libelle']} ({r['debut'][:10]} → {r['fin'][:10]}) ===")
         print(f"gradués {r['gradues']} · analysés {r['analyses']} · "
@@ -1092,6 +1278,21 @@ def rendu_console(resultats):
         for rang, (code, n) in enumerate(classement, 1):
             pct = 100.0 * n / r["analyses"] if r["analyses"] else 0.0
             print(f"  {rang:2d}. {NOMS[code]:<55} {n:4d}  ({pct:5.1f} %)")
+        if "rentabilite" in r and meta:
+            hcle = meta["horizon_cle"]
+            print(f"  --- rentabilité nette (stop à l'invalidation, coûts "
+                  f"{meta['couts'] * 100:.1f} %, horizon clé {hcle} min) ---")
+            classement_r, verdict = classement_rentabilite(r, hcle)
+            for rg, (code, stats, h) in enumerate(classement_r, 1):
+                note = "" if stats["occurrences"] >= 5 else "  (n<5, peu fiable)"
+                print(f"  {rg:2d}. {NOMS[code]:<55} méd {h['mediane'] * 100:+6.1f} %  "
+                      f"n={stats['occurrences']:<4d} stop {stats['taux_stop']:4.0f} % "
+                      f"objectif {stats['taux_objectif']:4.0f} %{note}")
+            if verdict:
+                code, stats, h = verdict
+                print(f"  ► figure la plus rentable : {NOMS[code]} "
+                      f"({h['mediane'] * 100:+.1f} % net médian à {hcle} min, "
+                      f"n={stats['occurrences']})")
 
 
 # ---------------------------------------------------------------------------
@@ -1177,9 +1378,31 @@ def autotest():
     figures_temoin = r_temoin[0] if r_temoin else set()
     if figures_temoin:
         echecs.append(("temoin_baissier", sorted(figures_temoin)))
+
+    # --- simulation de rentabilité ---
+    # drapeau gagnant : cassure puis forte continuation → net positif, pas de stop
+    gagnant = _serie([(1.02, 6), (1.9, 8), (0.93, 3), (1.02, 3), (0.94, 3),
+                      (1.01, 3), (1.8, 20)])
+    _, occs_g, _, _, ctx_g = analyser_token(gagnant, seuil_force=0.05)
+    sim_g = simuler_token(ctx_g, {"drapeau_haussier": occs_g["drapeau_haussier"]},
+                          [15, 60], couts=0.03)
+    liste_g = sim_g.get("drapeau_haussier") or []
+    if not liste_g or not all(not r["stoppee"] and r["15"] > 0.10 for r in liste_g):
+        echecs.append(("simulation_gagnante", liste_g))
+    # double creux piégé : cassure du cou puis effondrement → stop touché,
+    # perte bornée au niveau d'invalidation (plus les coûts)
+    perdant = _serie([(1.02, 5), (0.70, 6), (1.22, 6), (0.83, 6),
+                      (1.30, 4), (0.55, 8)])
+    res_p = analyser_token(perdant, seuil_force=0.05)
+    sim_p = simuler_token(res_p[4], {"double_creux": res_p[1]["double_creux"]},
+                          [60], couts=0.03)
+    liste_p = sim_p.get("double_creux") or []
+    if not liste_p or not all(r["stoppee"] and -0.45 < r["60"] < -0.15 for r in liste_p):
+        echecs.append(("simulation_stop", liste_p))
+    total = len(cas) + 3  # + témoin baissier + 2 scénarios de simulation
     for code, obtenu in echecs:
         print(f"ÉCHEC {code} : détecté {obtenu}")
-    print(f"Autotest : {len(cas) + 1 - len(echecs)}/{len(cas) + 1} cas OK")
+    print(f"Autotest : {total - len(echecs)}/{total} cas OK")
     return 0 if not echecs else 1
 
 
@@ -1211,6 +1434,15 @@ def principal():
                    help="minutes de chart post-graduation (sources moralis/geckoterminal)")
     p.add_argument("--seuil-zigzag", type=float, default=None,
                    help="forcer le seuil ZigZag (défaut : adaptatif)")
+    p.add_argument("--rentabilite", action="store_true",
+                   help="étude d'événement : rendement net par figure (entrée à la "
+                        "confirmation, stop au niveau d'invalidation)")
+    p.add_argument("--couts", type=float, default=0.03,
+                   help="coûts d'un aller-retour (frais + slippage), en fraction")
+    p.add_argument("--horizons", default="15,60,240",
+                   help="horizons de sortie en minutes, séparés par des virgules")
+    p.add_argument("--horizon-cle", type=int, default=None,
+                   help="horizon du classement de rentabilité (défaut : le médian)")
     p.add_argument("--json", metavar="FICHIER", help="écrire les résultats en JSON")
     p.add_argument("--markdown", metavar="FICHIER", help="écrire le rapport Markdown")
     p.add_argument("--verbeux", action="store_true",
@@ -1225,6 +1457,8 @@ def principal():
     date_ref = (dt.date.fromisoformat(args.date_ref) if args.date_ref
                 else dt.datetime.now(dt.timezone.utc).date())
     reculs = [int(x) for x in args.fenetres.split(",") if x.strip()]
+    args.horizons_min = [int(x) for x in args.horizons.split(",") if x.strip()]
+    horizon_cle = args.horizon_cle or sorted(args.horizons_min)[len(args.horizons_min) // 2]
 
     try:
         liste, bougies_fn, nom_source, nom_bougies = construire_sources(args)
@@ -1262,8 +1496,12 @@ def principal():
         "bougies": nom_bougies,
         "echantillon": args.echantillon,
         "date_ref": date_ref.isoformat(),
+        "rentabilite": args.rentabilite,
+        "couts": args.couts,
+        "horizons": args.horizons_min,
+        "horizon_cle": horizon_cle,
     }
-    rendu_console(resultats)
+    rendu_console(resultats, meta)
     if args.markdown:
         with open(args.markdown, "w", encoding="utf-8") as f:
             f.write(rendu_markdown(resultats, meta))
