@@ -44,7 +44,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
 | 18 | **Range — quels pools écarter** | ✅ **surplomb 2,99 contre 0,14** ; pertes lourdes de 10 % à **0,6 %** | `filtre-surplomb.sql` |
-| 17 | **Range — comment sortir** | ✅ **la réintégration est la meilleure sortie** — moyenne 0,9922 contre 0,9822 sans stop | `sortie-fill-reel.sql` |
+| 17 | **Range — comment sortir** | ⚠️ **aucune sortie ne domine** — hors rugs l'absence de stop gagne (1,0300 contre 1,0290) ; re-mesuré au fill réel le 15/08 | `sortie-fill-reel.sql` |
 | 16 | **Range — sur quelle liquidité** | ✅ gradient monotone, gagnants **47 % → 85 %** ; quintile 4 seule moyenne > 1 | `liquidite-discriminante.sql` |
 | 15 | **Réveil après consolidation — LE signal de range** | ⏳ **bat la baseline sur toutes les mesures** (0,9834 contre 0,9501) mais reste sous 1 | `reveil-postgraduation.sql` |
 
@@ -851,7 +851,7 @@ tient sur la moyenne tronquée. Mais les deux restent **sous 1**.
 **Le quintile 4 est la seule cellule à moyenne supérieure à 1 de toute l'enquête.**
 Sur 95 observations, et sa moyenne tronquée reste à 0,9816.
 
-## Étude 17 — la réintégration devient la meilleure sortie
+## Étude 17 — aucune règle de sortie ne domine
 
 | Règle | Déclenche | Médiane | Moyenne | Sans top 3 | Pertes > 50 % |
 |---|---|---|---|---|---|
@@ -865,6 +865,37 @@ réintégration semblait coûter (2,271 contre 2,885) ; le ×314 d'un pool hors 
 écrasait tout. Sur données propres elle est **la meilleure règle**, +1 point de
 moyenne. La règle 5 reste vraie — le fill du stop en pourcentage est mauvais —
 mais la réintégration déclenche assez tôt pour y échapper.
+
+### Correction du 15/08 — le +1 point ne se reproduit pas
+
+Re-mesure au fill réel sur le signal de **borne d'ancrage** (étude 26), horodaté
+en `event_timestamp` : 306 signaux, 116 tokens, 841 trades par fenêtre de 30 min
+à la médiane. Déclenchement lu sur les trades bruts, fill au premier trade au
+moins 1 s après.
+
+| Population | Règle | Déclenche | Qualité du fill | Moyenne hors queue | Sans top 3 | Pertes > 50 % |
+|---|---|---|---|---|---|---|
+| Tous signaux | Sans stop | — | — | 0,9972 | 0,9930 | 3,3 % |
+| Tous signaux | Stop −20 % | 4,6 % | 0,5828 | 1,0055 | 1,0013 | 2,3 % |
+| Tous signaux | Réintégration | 4,9 % | 0,6122 | 1,0060 | 1,0019 | 2,3 % |
+| Hors rugs | **Sans stop** | — | — | **1,0300** | **1,0259** | 0 % |
+| Hors rugs | Stop −20 % | 1,4 % | 0,9004 | 1,0285 | 1,0244 | 0,3 % |
+| Hors rugs | Réintégration | 1,7 % | 0,9036 | 1,0290 | 1,0249 | 0,3 % |
+
+Hors rugs, **l'absence de stop gagne** — ce qui rejoint le commit `c100152`
+(« aucune règle de sortie n'aide ») et non la refonte. L'écart entre les trois
+règles, 0,001 à 0,003, est en tout état de cause sous le bruit d'un échantillon
+de 109 tokens.
+
+La qualité de fill de la réintégration est de **0,6122** sur la population
+complète, très loin des 0,9832 relevés lors de la refonte : quand la liquidité
+part, elle ne se remplit pas mieux qu'un stop en pourcentage.
+
+Deux réserves sur cette correction. Elle porte sur un **signal différent** — la
+borne d'ancrage, pas la fenêtre glissante de la refonte — donc elle ne réfute pas
+la refonte sur son propre terrain, elle montre que son verdict ne se transporte
+pas. Et l'ordre des règles s'inverse selon qu'on inclut les rugs ou non, ce qui
+est le vrai enseignement : la sortie ne décide de rien, l'entrée décide de tout.
 
 ## Étude 18 — le surplomb élimine les catastrophes
 
