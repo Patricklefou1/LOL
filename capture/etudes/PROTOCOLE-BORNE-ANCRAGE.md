@@ -130,3 +130,97 @@ règle. Le plafond est donc à +4,9 %, et la sortie à durée fixe en capture d�
 cas seulement. Ces huit trades rendent **0,9007** contre 1,0338 pour les 74
 autres : repasser sous la borne annonce l'échec. Ils atteignent pourtant 1,0585 à
 leur point haut — ils montent d'abord, puis retombent.
+
+---
+
+## Relevé hors échantillon v1 — mise à jour du 15 août 2026, 22h45 UTC
+
+Deuxième lecture, **paramètres strictement inchangés**. Signaux dont l'entrée est
+postérieure à la coupure du 13/08 20:00, du 13/08 20:15 au 15/08 15:31.
+
+| Mesure | Valeur | Seuil de validation | Seuil de mort |
+|---|---|---|---|
+| **Tokens** | **12** | *150 requis* | — |
+| Trades | 25 | — | — |
+| **Moyenne** | **1,0210** | ≥ 1,010 ✅ | < 0,995 |
+| Médiane | 1,0357 | — | — |
+| **Moyenne sans top 3** | **1,0134** | ≥ 1,000 ✅ | < 0,980 |
+| **Trades gagnants** | **92,0 %** | ≥ 60 % ✅ | — |
+| **Effondrements** | **0 %** | — | > 2 % ✅ |
+
+**Verdict : NON CONCLUANT — prolonger.** Les trois conditions de validation sont
+réunies et aucune condition de mort n'est atteinte, mais l'échantillon est de 12
+tokens sur les 150 requis. Le protocole impose de prolonger sans rien changer.
+
+La première lecture donnait 0,9315 sur trois tokens ; celle-ci 1,0210 sur douze.
+L'écart entre les deux illustre exactement pourquoi le seuil de 150 existe.
+
+**Rythme réel : environ 6,5 tokens par jour.** L'estimation initiale d'« environ
+une semaine » était trop optimiste — il faut compter **une vingtaine de jours**
+à ce rythme.
+
+---
+
+# Protocole v2 — couloir élargi à 1,15
+
+Pré-enregistré le **15 août 2026 à 22h45 UTC**. Le protocole v1 ci-dessus
+continue de tourner **inchangé** ; v2 ne le remplace pas, il l'accompagne.
+
+## Pourquoi un second protocole plutôt qu'une modification
+
+Une analyse de sensibilité menée le 15/08 montre que le couloir de 1,10 était
+trop serré : il éliminait 86 % des tokens porteurs d'un signal, et l'élargir à
+1,15 améliorait simultanément la médiane, la moyenne, la moyenne sans top 3, le
+taux de gagnants et le taux de pertes lourdes.
+
+Mais ce seuil a été choisi **après avoir vu les données**. Modifier v1 en
+conséquence serait précisément ce que sa clause d'ouverture interdit. On ouvre
+donc un protocole distinct, avec sa propre coupure, et on laisse v1 vivre sa vie.
+Si les deux valident, la conclusion est robuste au réglage ; si seul v2 valide,
+le doute d'ajustement reste entier.
+
+## Ce qui change, et rien d'autre
+
+**Un seul paramètre** : `max(plus_haut) / min(plus_bas) ≤ 1,15` au lieu de 1,10.
+Tous les autres paramètres figés du v1 sont repris à l'identique — univers,
+bougies de 5 min sur `event_timestamp`, range d'une heure fixe, ≥ 5 trades par
+bougie, taille médiane ≥ 0,01 SOL, borne figée, signal à +5 %, taille du signal
+≤ 3× celle du range, entrée à l'ouverture suivante, sortie à 30 min, réserve
+≥ 5 SOL, coûts identiques.
+
+## Coupure
+
+**2026-08-16 00:00:00 UTC.** Postérieure à l'intégralité des données ayant servi
+au choix du seuil, qui s'arrêtent au 15/08 22:17 UTC.
+
+## Référence dans l'échantillon de réglage
+
+| Mesure | v2 (couloir 1,15) | v1 (couloir 1,10) |
+|---|---|---|
+| Tokens | 44 | 103 |
+| Trades | 89 | 273 |
+| Moyenne | 1,0134 | 1,0098 |
+| Médiane | 1,0405 | 1,0343 |
+| Moyenne sans top 3 | 1,0062 | 1,0048 |
+| Trades gagnants | 84,3 % | 92,3 % |
+| **Effondrements** | **2,25 %** | 2,56 % |
+
+## Réserve inscrite avant toute donnée
+
+**Le taux d'effondrement de référence, 2,25 %, dépasse déjà le seuil de mort de
+2 %.** v2 démarre donc en situation défavorable sur ce critère précis, et c'est
+lui qui décidera vraisemblablement de son sort. C'est consigné ici, avant la
+coupure, pour qu'on ne puisse pas plus tard présenter un échec sur ce critère
+comme une surprise — ni l'écarter comme un détail.
+
+Deux variantes ont été écartées et sont notées pour mémoire : sans filtre de
+taille, 147 tokens mais 2,25 % d'effondrements également ; avec un filtre à
+0,001 SOL, 57 tokens et 1,74 % d'effondrements, seule variante sous le seuil de
+mort — mais elle exigeait de modifier deux paramètres au lieu d'un.
+
+## Critères de décision
+
+Identiques au v1, sans aucune modification : validé si moyenne ≥ 1,010 **et**
+moyenne sans top 3 ≥ 1,000 **et** gagnants ≥ 60 % ; tué si moyenne < 0,995
+**ou** moyenne sans top 3 < 0,980 **ou** effondrements > 2 % ; non concluant
+entre les deux, prolonger. Échantillon minimal : **150 tokens distincts**.

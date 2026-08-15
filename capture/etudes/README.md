@@ -37,7 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
-| 26 | **Borne d'ancrage** | ✅ **1,0208 sur 52 tokens, zéro effondrement** — première implémentation correcte | `borne-ancrage.sql` |
+| 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0210 sur 12 tokens**, les 3 critères passent mais 150 tokens requis — prolonger | `borne-ancrage.sql` |
 | 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
 | 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
@@ -1212,6 +1212,61 @@ réel sur le token d'origine, absent à l'échelle.
 
 Trois hypothèses d'artificialité, trois fois le même verdict. Ce qui se voit sur
 un graphique n'est pas ce qui distingue statistiquement les catastrophes.
+
+## Sensibilité des seuils — 15 août 2026
+
+Mesure sur le pipeline reconstruit en `event_timestamp`, capture complète du
+10/08 au 15/08 : 241 384 bougies, 5 141 pools, 8 804 blocs d'une heure.
+
+### Où passent les tokens
+
+| Étape | Tokens | Signaux |
+|---|---|---|
+| Pools avec série exploitable | 5 141 | — |
+| … avec un bloc d'heure complet | 2 261 | 8 804 |
+| … avec un signal | 899 | 2 156 |
+| **… + couloir ≤ 1,10** | **128** | 331 |
+| … + activité, bougie normale, réserve ≥ 5 SOL | 116 | 306 |
+| **… + taille médiane ≥ 0,01 SOL** | **31** | 51 |
+
+Deux seuils font tout le dégât : le couloir élimine 86 % des tokens porteurs
+d'un signal, le filtre de taille encore 73 % de ce qui reste. Les autres filtres
+coûtent une douzaine de tokens à eux tous.
+
+### Le couloir, sans filtre de taille
+
+| Couloir | Tokens | Signaux | Médiane | Moy. hors queue | Sans top 3 | Gagnants | Pertes > 50 % |
+|---|---|---|---|---|---|---|---|
+| ≤ 1,10 | 103 | 273 | 1,0343 | 1,0098 | 1,0048 | 92,3 % | 2,6 % |
+| **≤ 1,15** | **147** | 488 | **1,0427** | **1,0188** | **1,0158** | **92,8 %** | **2,5 %** |
+| ≤ 1,20 | 198 | 641 | 1,0480 | 1,0122 | 1,0099 | 91,6 % | 3,6 % |
+| ≤ 1,30 | 244 | 780 | 1,0515 | 1,0126 | 1,0107 | 90,3 % | 4,1 % |
+| aucun plafond | 583 | 1 493 | 1,0510 | 0,9801 | 0,9816 | 75,2 % | 8,2 % |
+
+Élargir de 1,10 à 1,15 gagne 44 tokens **et** améliore tous les indicateurs
+simultanément. Le résultat tient sur tout le plateau 1,10 – 1,30, où le sans-top-3
+reste entre 1,0048 et 1,0158 ; il ne s'effondre qu'en retirant le plafond.
+
+C'est le plateau qui compte, pas la valeur optimale : un résultat robuste sur une
+plage de seuils n'est pas un artefact de réglage. Retenir 1,15 parce qu'il sort
+meilleur serait au contraire de l'ajustement — d'où le protocole v2 distinct,
+avec sa propre coupure, plutôt qu'une modification du v1.
+
+### Le filtre de taille, à couloir 1,15
+
+| Filtre | Tokens | Moy. hors queue | Sans top 3 | Effondrements |
+|---|---|---|---|---|
+| aucun | 147 | 1,0188 | 1,0158 | 2,25 % |
+| ≥ 0,001 SOL | 57 | 1,0262 | 1,0145 | **1,74 %** |
+| ≥ 0,005 SOL | 44 | 1,0134 | 1,0062 | 2,25 % |
+| ≥ 0,01 SOL | 44 | 1,0134 | 1,0062 | 2,25 % |
+| ≥ 0,05 SOL | 36 | 1,0347 | 1,0252 | **0 %** |
+
+**Le filtre de taille perd sa raison d'être à couloir élargi.** À 0,005 et 0,01
+SOL il laisse exactement le même taux d'effondrement que sans filtre — 2,25 % —
+tout en divisant l'effectif par plus de trois. Il ne redevient protecteur qu'à
+0,05 SOL, sur 36 tokens. Ce qu'il achetait à couloir 1,10, il ne l'achète plus
+à 1,15.
 
 ## Erreur de méthode n° 17 — construire la mesure avant de vérifier la mécanique
 
