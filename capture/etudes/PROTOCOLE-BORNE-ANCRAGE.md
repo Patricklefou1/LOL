@@ -224,3 +224,47 @@ Identiques au v1, sans aucune modification : validé si moyenne ≥ 1,010 **et**
 moyenne sans top 3 ≥ 1,000 **et** gagnants ≥ 60 % ; tué si moyenne < 0,995
 **ou** moyenne sans top 3 < 0,980 **ou** effondrements > 2 % ; non concluant
 entre les deux, prolonger. Échantillon minimal : **150 tokens distincts**.
+
+---
+
+## Relevé du 16 août 2026, 20h08 UTC
+
+Premier relevé automatisé (minuteur quotidien, 06h00 UTC). Paramètres inchangés
+pour les deux protocoles.
+
+| Mesure | v1 (couloir 1,10) | v2 (couloir 1,15) |
+|---|---|---|
+| Coupure | 13/08 20:00 | 16/08 00:00 |
+| **Tokens** | **17** / 150 | **8** / 150 |
+| Trades | 31 | 12 |
+| Moyenne | 1,0327 | 1,0661 |
+| Médiane | 1,0341 | 1,0458 |
+| Moyenne sans top 3 | 1,0178 | 1,0352 |
+| Gagnants | 93,5 % | 100 % |
+| Effondrements | 0 % | 0 % |
+| **Verdict** | **non concluant, tendance validation** | **non concluant, tendance validation** |
+
+Progression de v1 : 3 tokens et 0,9315 au 14/08 ; 12 et 1,0210 au 15/08 ; 17 et
+1,0327 aujourd'hui. **Aucune tendance ne doit être lue dans cette suite** — c'est
+un échantillon qui grossit, pas une série temporelle.
+
+Rythme : v1 accumule 5,7 tokens/jour, v2 **9,6**. Le couloir élargi collecte
+environ 1,7 fois plus vite, ce qui était son objet. Aux rythmes actuels les 150
+tokens tombent vers le **8 septembre** pour v1 et le **31 août** pour v2.
+
+Réserve sur v2 : 8 tokens, 100 % de gagnants et zéro effondrement sont un
+échantillon minuscule et exceptionnellement favorable. Sa référence de réglage
+annonçait 2,25 % d'effondrements, au-dessus de son seuil de mort ; ce critère
+n'a tout simplement pas encore eu l'occasion de se manifester.
+
+### Correction d'un verdict erroné
+
+Le passage automatique de 06h04 avait déclaré **v2 « TUÉ » sur 1 token**. Cause :
+la statistique « sans top 3 » vaut mécaniquement 0 quand on retire les trois
+meilleurs trades d'un échantillon qui en compte un, et ce 0 franchissait le
+seuil de mort de 0,980.
+
+Corrigé dans l'outil : aucun verdict, ni validation ni mort, n'est prononcé
+sous les 150 tokens. Le protocole fixe cet effectif pour **la décision**, pas
+seulement pour la validation — on ne peut pas plus tuer sur un token que valider
+sur un token. La statistique sans-top-3 n'est plus calculée sous 4 trades.
