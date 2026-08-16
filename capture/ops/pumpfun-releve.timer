@@ -1,0 +1,12 @@
+[Unit]
+Description=Declenche le releve quotidien de la borne d'ancrage
+
+[Timer]
+# Une fois par jour a 06h00 UTC : le releve accumule sur des semaines, une
+# lecture quotidienne suffit et evite de tenter une lecture a chaque signal.
+OnCalendar=*-*-* 06:00:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

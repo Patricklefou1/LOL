@@ -1,0 +1,21 @@
+[Unit]
+Description=Rafraichit la couche derivee Pump.fun (pumpswap_trades, pumpswap_pools)
+Documentation=file:/opt/pumpfun/bin/rafraichir-derivees.sh
+After=clickhouse-server.service
+Wants=clickhouse-server.service
+
+[Service]
+Type=oneshot
+User=pumpfun
+ExecStart=/opt/pumpfun/bin/rafraichir-derivees.sh
+
+# Le rattrapage ne doit jamais concurrencer la capture pour le disque ni le CPU.
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=20
+
+# Un passage normal dure moins d'une minute ; au-dela, quelque chose cloche.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

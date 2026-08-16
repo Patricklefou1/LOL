@@ -1,0 +1,17 @@
+[Unit]
+Description=Declenche le rafraichissement de la couche derivee Pump.fun
+Documentation=file:/opt/pumpfun/bin/rafraichir-derivees.sh
+
+[Timer]
+# Toutes les 15 minutes : la couche derivee ne peut alors jamais avoir plus
+# d'un quart d'heure de retard sur la capture brute.
+OnCalendar=*:0/15
+# Decale le declenchement pour ne pas tomber pile sur les minutes rondes, ou
+# se pressent les autres taches de la machine.
+RandomizedDelaySec=90
+# Si la machine etait eteinte a l'heure prevue, rattraper au demarrage.
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
