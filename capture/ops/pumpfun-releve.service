@@ -1,5 +1,5 @@
 [Unit]
-Description=Releve hors echantillon de la borne d'ancrage (protocoles v1 et v2)
+Description=Releve hors echantillon de la borne d'ancrage (protocoles v1, v2, v3)
 Documentation=file:/opt/pumpfun/bin/releve-borne-ancrage.sh
 After=clickhouse-server.service pumpfun-derivees.service
 Wants=clickhouse-server.service
