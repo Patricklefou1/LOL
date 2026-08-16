@@ -1268,6 +1268,42 @@ tout en divisant l'effectif par plus de trois. Il ne redevient protecteur qu'à
 0,05 SOL, sur 36 tokens. Ce qu'il achetait à couloir 1,10, il ne l'achète plus
 à 1,15.
 
+## Significativité — 16 août 2026
+
+Premier test de significativité mené sur l'enquête. Il aurait dû venir bien plus tôt.
+
+| Configuration | Unité | n | Moyenne | Écart-type | **t** |
+|---|---|---|---|---|---|
+| Borne seule | par signal | 356 | 1,0035 | 0,1886 | **0,35** |
+| Borne seule | **par token** | 125 | **0,9869** | 0,2081 | **−0,70** |
+| + taille ≥ 0,01 SOL | par signal | 54 | 1,0303 | 0,0694 | **3,21** |
+| **+ taille ≥ 0,01 SOL** | **par token** | 34 | 1,0292 | 0,0871 | **1,96** |
+
+**La borne seule ne vaut rien.** Comptée par token — seule unité valide, règle 6 —
+elle est **sous 1**. Le 1,0035 par signal était gonflé par les tokens rentables
+qui portent plusieurs signaux : 2,64 en moyenne, jusqu'à 10. La règle « compter
+en tokens, jamais en signaux » ne change pas ici une décimale, elle change le
+signe.
+
+**Le filtre de taille ne sélectionne pas des gagnants, il réduit la variance.**
+L'écart-type passe de 0,1886 à 0,0694 — 63 % de moins — pendant que la moyenne
+bouge à peine. C'est ce qui fait passer le t de 0,35 à 3,21. Corrige la note du
+15/08 qui le disait redondant à couloir élargi : ce jugement reposait sur le
+seul taux d'effondrement, pas sur le rapport signal/bruit.
+
+**C'est le seul résultat significatif de l'enquête** — t = 1,96 par token, au
+seuil de 5 %, sur 34 tokens quand la dispersion en demande 35.
+
+### Ce que ça implique pour les autres résultats
+
+Toute moyenne rapportée sans son écart-type dans ce registre est à reprendre. À
+titre d'exemple, l'hypothèse « tout vert » de l'étude v3 affiche une médiane de
+1,0410 sur 550 tokens, très engageante — mais un **t de 0,68**, c'est-à-dire un
+effet plus petit que son erreur standard. Il faudrait 4 596 tokens pour trancher.
+
+**Règle : publier moyenne, écart-type et t, ou ne rien conclure.** Une médiane
+flatteuse sur un échantillon dispersé n'est pas un résultat, c'est un tirage.
+
 ## Erreur de méthode n° 17 — construire la mesure avant de vérifier la mécanique
 
 J'ai passé quinze heures à empiler des filtres sur une implémentation fausse. La

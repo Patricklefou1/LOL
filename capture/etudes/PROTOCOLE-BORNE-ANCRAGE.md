@@ -268,3 +268,91 @@ Corrigé dans l'outil : aucun verdict, ni validation ni mort, n'est prononcé
 sous les 150 tokens. Le protocole fixe cet effectif pour **la décision**, pas
 seulement pour la validation — on ne peut pas plus tuer sur un token que valider
 sur un token. La statistique sans-top-3 n'est plus calculée sous 4 trades.
+
+---
+
+# Protocole v3 — détection « tout vert », entrée à 45 min, sortie à 15 min
+
+Pré-enregistré le **16 août 2026 à 20h30 UTC**. Hypothèse distincte des v1/v2 :
+elle ne porte pas sur une cassure de range mais sur les tokens dont le prix
+monte sans interruption, que l'utilisateur a identifiés comme artificiels.
+
+## L'idée
+
+Un token dont les neuf premières bougies de 5 minutes sont **toutes vertes** est
+tenu par quelqu'un. Mesuré : ces tokens vivent 2 h 48 en médiane contre 15 min
+pour les autres, montent d'environ **+0,37 % par minute**, et 73 % finissent par
+s'effondrer — mais l'effondrement se produit à 94 % dans une seule bougie, avec
+un plus bas à 0,000012 × le sommet. Il n'y a pas de sortie possible pendant le
+rug ; on parie sur la montée en sortant bien avant.
+
+## Paramètres figés
+
+| Paramètre | Valeur |
+|---|---|
+| Univers | pools PumpSwap, réserve quote médiane entre 5 et 20 000 SOL |
+| Bougies | 5 minutes, datées sur `event_timestamp` |
+| **Détection** | les **9 premières bougies** (45 min) toutes vertes (`clôture > ouverture`), au moins 8 présentes |
+| Entrée | **premier trade au-delà de t0 + 45 min** |
+| Sortie | **premier trade au-delà de l'entrée + 15 min** |
+| Réserve | ≥ 5 SOL à l'entrée |
+| Coûts | 0,5 SOL d'impact de chaque côté, 0,6 % de frais |
+
+## Coupure
+
+**2026-08-17 00:00:00 UTC**, postérieure à toutes les données de réglage, qui
+s'arrêtent au 16/08 20:01 UTC.
+
+## Référence dans l'échantillon de réglage
+
+| Mesure | Valeur |
+|---|---|
+| Tokens | 550 |
+| Médiane | 1,0410 |
+| **Moyenne** | **1,0062** |
+| Moyenne sans top 3 | 1,0046 |
+| Gagnants | 84,4 % |
+| Pertes > 50 % | 4,2 % |
+| Écart-type | 0,2147 |
+| Erreur standard | 0,0092 |
+| **t de Student** | **0,68** |
+
+## L'avertissement principal, écrit avant la coupure
+
+**Cet effet n'est pas significatif dans l'échantillon de réglage.** Un t de 0,68
+signifie que le gain mesuré (+0,62 %) est plus petit que sa propre erreur
+standard (0,92 %) : sur 550 tokens, il est indiscernable de zéro. La médiane de
+1,0410 est trompeuse — c'est la moyenne qui décide, et elle ne conclut rien.
+
+Ce protocole n'est donc **pas** l'enregistrement d'un résultat prometteur. C'est
+l'enregistrement d'une hypothèse dont on sait d'avance qu'elle demande beaucoup
+de données pour être tranchée, et qu'on consigne maintenant pour ne pas pouvoir,
+dans deux mois, présenter un résultat favorable comme s'il avait été prédit.
+
+## Échantillon minimal, calculé et non choisi
+
+**4 596 tokens.** C'est l'effectif nécessaire pour que l'effet observé se
+distingue de zéro à 95 %, soit `(1,96 × 0,2147 / 0,0062)²`. Au rythme observé de
+**~92 tokens/jour**, cela demande **environ 50 jours** de capture.
+
+Contrairement aux 150 tokens de v1 et v2 — un nombre rond décidé à l'avance —
+celui-ci est dérivé de la dispersion mesurée. Il n'est pas négociable à la
+baisse : une validation sur moins ne voudrait rien dire.
+
+## Critères de décision
+
+**VALIDÉ** si les trois sont réunies, sur au moins 4 596 tokens :
+- moyenne ≥ **1,003**
+- moyenne sans les 3 meilleurs ≥ **1,000**
+- **t ≥ 2,0**
+
+**TUÉ** si l'une est vraie, sur au moins 500 tokens :
+- moyenne < **0,995**
+- **t ≤ −2,0**
+- pertes > 50 % au-delà de **10 %**
+
+**NON CONCLUANT** dans tous les autres cas : prolonger sans rien changer.
+
+Le critère de t figure explicitement parce que l'effet visé est quatre fois plus
+petit que celui de v1/v2 : une moyenne au-dessus du seuil sans significativité
+ne serait qu'un tirage favorable.
