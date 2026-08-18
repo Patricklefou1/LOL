@@ -45,7 +45,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 20 | Trois stratégies à contre-courant | ❌ **les trois mortes** — le preneur paie le gap dans les deux sens | `wtf-postgraduation.sql` |
 | 19 | **Acheter toutes les graduations** | ❌ **perdant à tous les horizons** — médiane 0,088 et moyenne 0,739 à 30 min | `acheter-les-graduations.sql` |
 | 18 | **Range — quels pools écarter** | ✅ **surplomb 2,99 contre 0,14** ; pertes lourdes de 10 % à **0,6 %** | `filtre-surplomb.sql` |
-| 17 | **Range — comment sortir** | ⚠️ **aucune sortie ne domine** — hors rugs l'absence de stop gagne (1,0300 contre 1,0290) ; re-mesuré au fill réel le 15/08 | `sortie-fill-reel.sql` |
+| 17 | **Range — comment sortir** | ⚠️ **le stop ne sauve pas, il amortit** — pertes lourdes 3,9 → 2,2 %, mais la moyenne par token reste à 0,97 ; re-mesuré le 18/08 | `sortie-fill-reel.sql` |
 | 16 | **Range — sur quelle liquidité** | ✅ gradient monotone, gagnants **47 % → 85 %** ; quintile 4 seule moyenne > 1 | `liquidite-discriminante.sql` |
 | 15 | **Réveil après consolidation — LE signal de range** | ⏳ **bat la baseline sur toutes les mesures** (0,9834 contre 0,9501) mais reste sous 1 | `reveil-postgraduation.sql` |
 
@@ -1268,6 +1268,62 @@ SOL il laisse exactement le même taux d'effondrement que sans filtre — 2,25 %
 tout en divisant l'effectif par plus de trois. Il ne redevient protecteur qu'à
 0,05 SOL, sur 36 tokens. Ce qu'il achetait à couloir 1,10, il ne l'achète plus
 à 1,15.
+
+## Étude 17, troisième mesure — 18 août 2026
+
+Au fill réel sur le signal de borne d'ancrage, **sans le filtre de taille** :
+545 signaux, 187 tokens, 889 trades par fenêtre de 30 min à la médiane.
+
+### Par signal
+
+| Population | Règle | Déclenche | Qualité du fill | Moyenne | Sans top 3 | Pertes > 50 % |
+|---|---|---|---|---|---|---|
+| Tous signaux | Sans stop | — | — | 0,9899 | 0,9875 | **3,9 %** |
+| Tous signaux | Stop −20 % | 4,8 % | 0,7328 | 1,0030 | 1,0007 | 2,2 % |
+| Tous signaux | Réintégration | 5,1 % | 0,6626 | **1,0042** | 1,0018 | 2,2 % |
+| Hors rugs | **Sans stop** | — | — | **1,0277** | 1,0254 | 0 % |
+| Hors rugs | Stop −20 % | 1,0 % | 0,9167 | 1,0273 | 1,0250 | 0,2 % |
+| Hors rugs | Réintégration | 1,3 % | 0,9579 | 1,0280 | 1,0257 | 0,2 % |
+
+### Par token — la seule unité valide
+
+| Population | Règle | Tokens | Moyenne | Écart-type | **t** |
+|---|---|---|---|---|---|
+| Tous signaux | Sans stop | 187 | **0,9508** | 0,2538 | **−2,65** |
+| Tous signaux | Stop −20 % | 187 | 0,9708 | 0,2115 | −1,89 |
+| Tous signaux | Réintégration | 187 | 0,9724 | 0,2114 | −1,79 |
+| Hors rugs | Sans stop | 176 | 1,0282 | 0,0619 | **6,04** |
+| Hors rugs | Stop −20 % | 176 | 1,0253 | 0,0793 | 4,24 |
+| Hors rugs | Réintégration | 176 | 1,0262 | 0,0782 | 4,43 |
+
+### Ce que ça corrige
+
+**Le stop ne sauve pas la stratégie, mais il amortit — c'est nouveau.** Les deux
+mesures précédentes concluaient que toute règle de sortie était inutile. Sur
+545 signaux au lieu de 306, les règles font passer les pertes lourdes de 3,9 % à
+2,2 % et la moyenne par token de 0,9508 à 0,9724. Le t remonte de −2,65 à −1,79.
+
+Le mécanisme se lit dans la **qualité du fill** : 0,66 à 0,73 sur la population
+complète. On ne sort pas au niveau visé — mais sortir à 70 % vaut infiniment
+mieux que subir un rug qui finit à 0,00001. Le stop n'évite pas l'effondrement,
+il attrape ceux qui sont assez progressifs pour se remplir.
+
+**Cela ne suffit pas.** Aucune règle ne ramène la moyenne par token au-dessus de
+1 : la meilleure plafonne à 0,9724, et son t reste négatif. Sur cette
+population, la stratégie perd de l'argent de façon statistiquement significative
+— t = −2,65 sans stop, soit p < 0,01.
+
+### Pourquoi le relevé hors échantillon dit l'inverse
+
+Cette mesure porte sur la population **sans le filtre de taille médiane
+≥ 0,01 SOL**, alors que le protocole pré-enregistré l'impose. C'est délibéré :
+l'étude 17 compare des règles de sortie, pas des populations.
+
+Mais l'écart entre les deux est tout l'enseignement. Hors rugs, la stratégie
+donne t = 6,04 ; tous rugs inclus, t = −2,65. **Onze tokens sur 187 renversent
+le signe.** Le filtre de taille est exactement ce qui les écarte à l'entrée —
+il ne fait pas gagner, il empêche les onze de tout emporter. La sortie ne peut
+pas faire ce travail, seule l'entrée le peut.
 
 ## Significativité — 16 août 2026
 
