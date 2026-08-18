@@ -271,13 +271,21 @@ sur un token. La statistique sans-top-3 n'est plus calculée sous 4 trades.
 
 ---
 
-# Protocole v3 — détection « tout vert », entrée à 45 min, sortie à 15 min
+# Protocole v3 — étude 27, « la montée tenue »
+
+*Détection sur neuf bougies vertes, entrée à 45 min, sortie à 15 min.*
 
 Pré-enregistré le **16 août 2026 à 20h30 UTC**. Hypothèse distincte des v1/v2 :
 elle ne porte pas sur une cassure de range mais sur les tokens dont le prix
 monte sans interruption, que l'utilisateur a identifiés comme artificiels.
 
-## L'idée
+## L'idée, et son nom
+
+Le prix de ces tokens ne monte pas : il est **tenu**. Quelqu'un l'entretient à
++0,37 % par minute pendant deux heures quarante, puis lâche — et tout s'effondre
+en une seule bougie. La stratégie consiste à monter avec, et à descendre avant
+qu'il lâche. Les neuf bougies vertes ne sont pas la stratégie, seulement le
+signe qui permet de le repérer.
 
 Un token dont les neuf premières bougies de 5 minutes sont **toutes vertes** est
 tenu par quelqu'un. Mesuré : ces tokens vivent 2 h 48 en médiane contre 15 min

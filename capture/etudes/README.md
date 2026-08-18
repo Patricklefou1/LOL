@@ -37,7 +37,8 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
-| 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0210 sur 12 tokens**, les 3 critères passent mais 150 tokens requis — prolonger | `borne-ancrage.sql` |
+| 27 | **La montée tenue** | ⏳ **hors échantillon en cours** — 92 tokens/jour, mais t = 0,42 : effet non significatif, 4 596 tokens requis | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0327 sur 19 tokens** (t = 1,40), variante à couloir 1,15 à 1,0562 sur 13 (t = 4,46) — 150 requis | `borne-ancrage.sql` |
 | 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
 | 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |

@@ -9,6 +9,7 @@
 #
 #   v1 — couloir <= 1,10, coupure 2026-08-13 20:00:00 UTC
 #   v2 — couloir <= 1,15, coupure 2026-08-16 00:00:00 UTC
+#   v3 — etude 27 « la montee tenue », coupure 2026-08-17 00:00:00 UTC
 #
 # Les deux tournent en parallele. v2 ne remplace pas v1 : si les deux valident,
 # la conclusion est robuste au reglage du couloir ; si seul v2 valide, le doute
@@ -221,7 +222,7 @@ verdict_v3() { # $1 tokens $2 moyenne $3 sanstop3 $4 pertes_lourdes $5 t
   IFS='|' read -r n3 m3 med3 st3 g3 pl3 t3 <<< "$(mesure_v3)"
   if [ -n "${n3:-}" ]; then
     v3=$(verdict_v3 "$n3" "$m3" "$st3" "$pl3" "$t3")
-    echo "## Protocole v3 — détection tout-vert, coupure $COUPURE_V3 UTC"
+    echo "## Protocole v3 — étude 27, « la montée tenue » — coupure $COUPURE_V3 UTC"
     echo
     echo "| Mesure | Valeur | Validation | Mort |"
     echo "|---|---|---|---|"
