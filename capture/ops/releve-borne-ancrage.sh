@@ -118,6 +118,27 @@ mesure() { # $1 = couloir, $2 = coupure
 
 MIN_TOKENS=${MIN_TOKENS:-150}
 
+# Ecart-type et t calcules PAR TOKEN, jamais par signal. Un token porte 2,64
+# signaux en moyenne et jusqu_a 10 : agreger par signal donne un poids double
+# aux tokens qui en emettent plusieurs. Mesure le 16/08 sur la borne seule, ce
+# choix ne deplace pas une decimale, il change le signe — 1,0035 par signal
+# contre 0,9869 par token.
+mesure_t() { # $1 = couloir, $2 = coupure
+  ch -q "
+  SELECT concat(
+    if(count() >= 2 AND stddevSamp(m) > 0, toString(round(stddevSamp(m),4)), 'n/a'), '|',
+    if(count() >= 2 AND stddevSamp(m) > 0, toString(round((avg(m)-1)/(stddevSamp(m)/sqrt(count())),2)), 'n/a'))
+  FROM (
+    SELECT a.pool AS pool, avg((s.cloture/e.ouverture)*(1-0.5/e.reserve)*(1-0.5/e.reserve)*0.994) AS m
+    FROM tmp_rel_ancre a
+    INNER JOIN tmp_rel_c5 e ON e.pool = a.pool AND e.b = a.b_signal + 1
+    INNER JOIN tmp_rel_c5 s ON s.pool = a.pool AND s.b = a.b_signal + 7
+    WHERE a.borne/a.bas <= $1 AND a.trades_min >= 5 AND e.reserve >= 5
+      AND a.taille_range >= 0.01 AND a.taille_signal/a.taille_range <= 3
+      AND a.t_signal + INTERVAL 300 SECOND > toDateTime('$2')
+    GROUP BY a.pool)"
+}
+
 verdict() { # $1 tokens $2 moyenne $3 sanstop3 $4 gagnants $5 effondr
   awk -v t="$1" -v m="$2" -v s="$3" -v g="$4" -v e="$5" -v mini="$MIN_TOKENS" 'BEGIN{
     if (t+0 == 0) { print "EN ATTENTE (aucun signal depuis la coupure)"; exit }
@@ -202,6 +223,7 @@ verdict_v3() { # $1 tokens $2 moyenne $3 sanstop3 $4 pertes_lourdes $5 t
     nom=${proto%%|*}; reste=${proto#*|}; couloir=${reste%%|*}; coupure=${reste#*|}
     IFS='|' read -r tk tr moy med st3 gag eff <<< "$(mesure "$couloir" "$coupure")"
     [ -n "${tk:-}" ] || { echo "## Protocole $nom — aucune donnée"; echo; continue; }
+    IFS='|' read -r sd_tok t_tok <<< "$(mesure_t "$couloir" "$coupure")"
     v=$(verdict "$tk" "$moy" "$st3" "$gag" "$eff")
     echo "## Protocole $nom — couloir ≤ $couloir, coupure $coupure UTC"
     echo
@@ -214,10 +236,16 @@ verdict_v3() { # $1 tokens $2 moyenne $3 sanstop3 $4 pertes_lourdes $5 t
     echo "| Moyenne sans top 3 | **$st3** | ≥ 1,000 | < 0,980 |"
     echo "| Gagnants | $gag % | ≥ 60 % | — |"
     echo "| Effondrements | $eff % | — | > 2 % |"
+    echo "| Écart-type par token | $sd_tok | *indicatif* | — |"
+    echo "| **t par token** | **$t_tok** | *indicatif* | — |"
     echo
     echo "**Verdict : $v**"
     echo
-    journal "$nom — $tk tokens, moyenne $moy, sans top 3 $st3, gagnants $gag %, effondrements $eff % — $v"
+    echo "> Le t est **indicatif** : les critères de ce protocole ont été"
+    echo "> pré-enregistrés sur les signaux, et ne sont pas modifiés ici. Il est"
+    echo "> calculé par token, seule unité valide, un token portant plusieurs signaux."
+    echo
+    journal "$nom — $tk tokens, moyenne $moy, sans top 3 $st3, gagnants $gag %, effondrements $eff %, t/token $t_tok — $v"
   done
   IFS='|' read -r n3 m3 med3 st3 g3 pl3 t3 <<< "$(mesure_v3)"
   if [ -n "${n3:-}" ]; then
