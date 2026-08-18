@@ -364,3 +364,67 @@ baisse : une validation sur moins ne voudrait rien dire.
 Le critère de t figure explicitement parce que l'effet visé est quatre fois plus
 petit que celui de v1/v2 : une moyenne au-dessus du seuil sans significativité
 ne serait qu'un tirage favorable.
+
+---
+
+# Amendement du 18 août 2026 — biais de survivance dans la mesure
+
+Les références en échantillon des protocoles v1 et v2, et tous les relevés hors
+échantillon publiés jusqu'ici, **écartaient silencieusement les signaux dont le
+token cessait de coter avant l'échéance de 30 minutes**. La jointure exigeait la
+bougie de sortie ; faute de bougie, le signal disparaissait de la mesure.
+
+Or un token qui cesse de coter n'est pas une donnée manquante : **c'est le pire
+résultat possible.** On est coincé dans la position, sans contrepartie pour en
+sortir. Les exclure revenait à ne demander leur avis qu'aux rescapés.
+
+## Ce que la correction change
+
+Mesuré sur un même pipeline et une même population, seule la règle de sortie
+variant — `b_signal + 7` contre `least(b_signal + 7, dernière bougie du pool)` :
+
+| Protocole | Méthode | Tokens | Moyenne | Sans top 3 | Effondrements |
+|---|---|---|---|---|---|
+| v1 | ancienne | 17 | 1,0268 | 1,0159 | 0 % |
+| **v1** | **corrigée** | 19 | **0,9807** | **0,9640** | **4,35 %** |
+| v2 | ancienne | 45 | 1,0142 | 1,0071 | 2,17 % |
+| **v2** | **corrigée** | 47 | **1,0034** | **0,9963** | **3,12 %** |
+
+**La référence en échantillon de v1 tombe sous 1.** Les effondrements
+apparaissent là où v1 en affichait zéro — ils étaient précisément les signaux
+écartés.
+
+Les effectifs de ce tableau (17 à 47 tokens) ne se comparent pas aux 52 tokens
+de la référence originale : le pipeline a été reconstruit depuis, sur
+`event_timestamp` et avec un univers défini par la réserve. Seul l'**écart entre
+les deux lignes** de chaque protocole est imputable à la correction.
+
+## Ce qui est corrigé, et ce qui ne l'est pas
+
+L'outil de relevé applique désormais `least(b_signal + 7, b_max)` pour v1 et v2.
+Le protocole v3 était déjà correct : sa mesure au niveau trade sortait déjà à la
+dernière transaction disponible.
+
+**Les paramètres de décision ne sont pas touchés** — seuils de validation, de
+mort et effectifs minimaux restent ceux du pré-enregistrement. Seule la mesure
+change, et elle change dans le sens de la sévérité.
+
+## Discontinuité assumée
+
+Les relevés publiés avant ce jour sont optimistes et ne sont pas comparables à
+ceux qui suivront. Premier relevé corrigé, le 18/08 à 20h29 :
+
+| | v1 | v2 | v3 |
+|---|---|---|---|
+| Tokens | 26 | 27 | 205 |
+| Moyenne | 1,0317 | 1,0142 | 1,0087 |
+| Sans top 3 | 1,0240 | 1,0071 | 1,0056 |
+| Effondrements | 0 % | **2,94 %** | — |
+| Tendance | validation | **mort** | — |
+
+**v2 bascule de « tendance validation » à « tendance mort »** du seul fait de la
+correction : ses effondrements dépassent son seuil de 2 %. C'était prévu — la
+réserve inscrite avant sa coupure annonçait que ce critère déciderait de son
+sort, sa référence de réglage étant déjà à 2,25 %.
+
+Un chiffre juste et discontinu vaut mieux qu'une série homogène et fausse.

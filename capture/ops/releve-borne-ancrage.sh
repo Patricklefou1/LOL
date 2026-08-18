@@ -84,6 +84,10 @@ SELECT pool, intDiv(b,12) AS bloc, min(plus_bas) AS bas, max(plus_haut) AS borne
   min(trades) AS trades_min, count() AS bougies, median(taille_med) AS taille_range, max(b) AS b_fin
 FROM tmp_rel_c5 GROUP BY pool, bloc HAVING bougies = 12;
 
+DROP TABLE IF EXISTS tmp_rel_fin;
+CREATE TABLE tmp_rel_fin ENGINE = MergeTree ORDER BY pool AS
+SELECT pool, max(b) AS b_max FROM tmp_rel_c5 GROUP BY pool;
+
 DROP TABLE IF EXISTS tmp_rel_ancre;
 CREATE TABLE tmp_rel_ancre ENGINE = MergeTree ORDER BY (pool, bloc) AS
 SELECT bl.pool AS pool, bl.bloc AS bloc, bl.bas AS bas, bl.borne AS borne,
@@ -110,7 +114,8 @@ mesure() { # $1 = couloir, $2 = coupure
     SELECT a.pool AS pool, (s.cloture/e.ouverture)*(1-0.5/e.reserve)*(1-0.5/e.reserve)*0.994 AS x
     FROM tmp_rel_ancre a
     INNER JOIN tmp_rel_c5 e ON e.pool = a.pool AND e.b = a.b_signal + 1
-    INNER JOIN tmp_rel_c5 s ON s.pool = a.pool AND s.b = a.b_signal + 7
+    INNER JOIN tmp_rel_fin f ON f.pool = a.pool
+    INNER JOIN tmp_rel_c5 s ON s.pool = a.pool AND s.b = least(a.b_signal + 7, f.b_max)
     WHERE a.borne/a.bas <= $1 AND a.trades_min >= 5 AND e.reserve >= 5
       AND a.taille_range >= 0.01 AND a.taille_signal/a.taille_range <= 3
       AND a.t_signal + INTERVAL 300 SECOND > '$2')"
@@ -132,7 +137,8 @@ mesure_t() { # $1 = couloir, $2 = coupure
     SELECT a.pool AS pool, avg((s.cloture/e.ouverture)*(1-0.5/e.reserve)*(1-0.5/e.reserve)*0.994) AS m
     FROM tmp_rel_ancre a
     INNER JOIN tmp_rel_c5 e ON e.pool = a.pool AND e.b = a.b_signal + 1
-    INNER JOIN tmp_rel_c5 s ON s.pool = a.pool AND s.b = a.b_signal + 7
+    INNER JOIN tmp_rel_fin f ON f.pool = a.pool
+    INNER JOIN tmp_rel_c5 s ON s.pool = a.pool AND s.b = least(a.b_signal + 7, f.b_max)
     WHERE a.borne/a.bas <= $1 AND a.trades_min >= 5 AND e.reserve >= 5
       AND a.taille_range >= 0.01 AND a.taille_signal/a.taille_range <= 3
       AND a.t_signal + INTERVAL 300 SECOND > toDateTime('$2')
@@ -272,5 +278,5 @@ verdict_v3() { # $1 tokens $2 moyenne $3 sanstop3 $4 pertes_lourdes $5 t
   echo "\`capture/etudes/PROTOCOLE-BORNE-ANCRAGE.md\`. Ce relevé ne les modifie pas."
 } > "$RAPPORT"
 
-ch -n -q "DROP TABLE IF EXISTS tmp_rel_c5; DROP TABLE IF EXISTS tmp_rel_bloc; DROP TABLE IF EXISTS tmp_rel_ancre; DROP TABLE IF EXISTS tmp_rel_v3d; DROP TABLE IF EXISTS tmp_rel_v3s;"
+ch -n -q "DROP TABLE IF EXISTS tmp_rel_c5; DROP TABLE IF EXISTS tmp_rel_bloc; DROP TABLE IF EXISTS tmp_rel_ancre; DROP TABLE IF EXISTS tmp_rel_fin; DROP TABLE IF EXISTS tmp_rel_v3d; DROP TABLE IF EXISTS tmp_rel_v3s;"
 journal "rapport ecrit : $RAPPORT"
