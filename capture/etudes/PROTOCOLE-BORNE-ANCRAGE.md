@@ -428,3 +428,94 @@ réserve inscrite avant sa coupure annonçait que ce critère déciderait de son
 sort, sa référence de réglage étant déjà à 2,25 %.
 
 Un chiffre juste et discontinu vaut mieux qu'une série homogène et fausse.
+
+---
+
+# Protocole v4 — étude 17 bis, filtre de surplomb sur la montée tenue
+
+Pré-enregistré le **19 août 2026 à 21h00 UTC**.
+
+*Note de nomenclature : le surplomb est le mécanisme de l'**étude 18**, pas de la
+17 qui porte sur les règles de sortie. Le nom « 17 bis » est celui demandé ; un
+lecteur cherchant l'origine du prédicteur doit se reporter à l'étude 18.*
+
+## Ce qu'on teste, et pourquoi maintenant
+
+Le backtest de l'étude 27 a montré que **tout se joue sur le taux de rug**. Elle
+encaisse 36,1 SOL et en rend 32,6 : elle garde moins de 10 % de ce qu'elle gagne.
+Son taux observé est de **4,24 %**, son taux d'équilibre de **4,68 %** — une marge
+de 0,44 point. Un rug efface 17,5 trades gagnants.
+
+Aucun des leviers essayés ne réduisait ce taux : ni les variables d'état, ni les
+structures d'événement, ni les règles de sortie, ni l'historique du créateur
+(94 % des tokens tradés sont un premier lancement), ni celui de son financeur
+(0,25 % de couverture).
+
+Le surplomb, lui, le réduit — mesuré sur 33 rugs, gradient monotone sur trois
+tranches.
+
+## Le paramètre ajouté, et rien d'autre
+
+Sur la stratégie de l'étude 27, strictement inchangée par ailleurs — détection
+sur 9 bougies vertes, entrée au premier trade après 45 min, sortie au premier
+trade après 15 min de détention, coûts identiques — on ajoute **une condition
+d'entrée** :
+
+> **Surplomb ≤ 2,64**, où surplomb = position nette en base du plus gros
+> porteur, divisée par les réserves en base du pool, calculée sur **tous les
+> trades strictement antérieurs à l'entrée**.
+
+## Coupure
+
+**2026-08-20 00:00:00 UTC**, postérieure à toutes les données ayant servi au
+choix du seuil.
+
+## Référence dans l'échantillon de réglage
+
+| Tranche de surplomb | Trades | Rugs | Taux | P&L à 1 SOL | t |
+|---|---|---|---|---|---|
+| **≤ 2,64 (retenu)** | 159 | 4 | **2,52 %** | +4,56 | **2,21** |
+| 2,64 à 12 | 309 | 12 | 3,88 % | +0,74 | 0,21 |
+| > 12 | 310 | 17 | 5,48 % | −1,80 | −0,42 |
+| *Sans filtre* | *778* | *33* | *4,24 %* | *+3,50* | — |
+
+## Deux réserves inscrites avant la coupure
+
+**Le P&L de référence est optimiste.** Découpé en deux, le quintile retenu place
+tout son profit dans sa moitié haute : la bande 1,10–2,64 rend +4,33 SOL sur 101
+trades, la bande ≤ 1,10 seulement +0,23 sur 58. Si le mécanisme était pur, le
+surplomb le plus bas serait le meilleur. Cette concentration est probablement une
+poche chanceuse. **On attend donc la baisse du taux de rug, pas le +4,56.**
+
+**La valeur absolue du surplomb n'est pas fiable.** La règle 8 signale que
+`base_amount` est peut-être mal décodé — un porteur ne détient pas dix fois les
+réserves d'un pool. Seul le **classement** entre pools est exploitable, et le
+seuil de 2,64 n'a de sens que relativement à cette mesure-là. Tout changement du
+décodeur invalide ce seuil.
+
+## Échantillon minimal, calculé
+
+**570 trades.** C'est l'effectif nécessaire pour distinguer un taux de 2,52 %
+d'un taux d'équilibre de 4,68 % à 95 % de confiance. Au rythme observé
+d'environ 18 trades par jour après filtrage, cela demande **un peu plus d'un
+mois**.
+
+Chaque trade porte sur un token distinct : la détection ne se déclenche qu'une
+fois par pool. Effectif en trades et en tokens coïncident donc ici.
+
+## Critères de décision
+
+**VALIDÉ** si, sur au moins 570 trades :
+- taux de rug ≤ **3,5 %**
+- moyenne ≥ **1,003**
+- t ≥ **2,0**
+
+**TUÉ** si, sur au moins 300 trades :
+- taux de rug ≥ **4,68 %** — le seuil d'équilibre, le filtre n'apporte alors rien
+- ou moyenne < **0,995**
+
+**NON CONCLUANT** sinon : prolonger sans rien changer.
+
+Le critère décisif est le **taux de rug**, pas la moyenne. C'est le seul
+paramètre que ce filtre prétend modifier, et le seul dont dépende la
+rentabilité de la stratégie sous-jacente.

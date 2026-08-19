@@ -37,6 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
+| 17 bis | **Filtre de surplomb sur la montée tenue** | ⏳ **pré-enregistré le 19/08** — divise le taux de rug par deux (5,48 → 2,52 %), seul levier trouvé sur le paramètre décisif | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 27 | **La montée tenue** | ⏳ **hors échantillon en cours** — 92 tokens/jour, mais t = 0,42 : effet non significatif, 4 596 tokens requis | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0327 sur 19 tokens** (t = 1,40), variante à couloir 1,15 à 1,0562 sur 13 (t = 4,46) — 150 requis | `borne-ancrage.sql` |
 | 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
