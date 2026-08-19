@@ -37,6 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
+| 28 | **Le créateur acheteur** | ⏳ **pré-enregistré le 19/08** — 0 rug sur 51 trades, écart-type divisé par 6 ; presque disjoint du surplomb, leur union donne 1,90 % de rug contre 4,24 % | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 17 bis | **Filtre de surplomb sur la montée tenue** | ⏳ **pré-enregistré le 19/08** — divise le taux de rug par deux (5,48 → 2,52 %), seul levier trouvé sur le paramètre décisif | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 27 | **La montée tenue** | ⏳ **hors échantillon en cours** — 92 tokens/jour, mais t = 0,42 : effet non significatif, 4 596 tokens requis | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0327 sur 19 tokens** (t = 1,40), variante à couloir 1,15 à 1,0562 sur 13 (t = 4,46) — 150 requis | `borne-ancrage.sql` |

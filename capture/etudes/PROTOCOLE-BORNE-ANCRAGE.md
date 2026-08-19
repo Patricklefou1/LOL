@@ -519,3 +519,73 @@ fois par pool. Effectif en trades et en tokens coïncident donc ici.
 Le critère décisif est le **taux de rug**, pas la moyenne. C'est le seul
 paramètre que ce filtre prétend modifier, et le seul dont dépende la
 rentabilité de la stratégie sous-jacente.
+
+---
+
+# Protocole v5 — étude 28, « le créateur acheteur »
+
+Pré-enregistré le **19 août 2026 à 22h00 UTC**, même coupure que le v4.
+
+## L'idée
+
+La position nette du créateur est mesurée **sur l'AMM**, pas sur la courbe. Elle
+est positive quand il **achète son propre token sur le marché** au lieu de
+distribuer ce qu'il détient depuis la graduation.
+
+Un créateur qui achète n'a pas monté son affaire pour vider le pool. Il a une
+exposition à la hausse, donc un intérêt contraire au rug.
+
+## Le paramètre ajouté
+
+Sur la stratégie de l'étude 27, inchangée par ailleurs :
+
+> **Position nette du créateur > 0**, calculée sur tous les trades AMM
+> strictement antérieurs à l'entrée, le créateur étant `coin_creator`.
+
+## Coupure
+
+**2026-08-20 00:00:00 UTC.**
+
+## Référence dans l'échantillon de réglage
+
+| Groupe | Trades | Rugs | Taux | Moyenne | Écart-type | t |
+|---|---|---|---|---|---|---|
+| **Créateur acheteur** | **51** | **0** | **0 %** | +0,0330 | **0,0382** | **6,17** |
+| Surplomb bas seul (v4) | 158 | 4 | 2,53 % | +0,0286 | 0,1645 | 2,18 |
+| Ni l'un ni l'autre | 568 | 29 | 5,11 % | −0,0048 | 0,2347 | −0,49 |
+| *Sans filtre* | *778* | *33* | *4,24 %* | *+0,0045* | — | *0,59* |
+
+**Les deux filtres sont presque disjoints** : un seul trade satisfait les deux.
+Leur union donne 210 trades, 4 rugs (1,90 %) et +6,24 SOL, contre 778 trades,
+33 rugs (4,24 %) et +3,50 SOL sans filtre.
+
+L'écart-type de 0,0382 — six fois inférieur à la population brute — dit le
+mécanisme : le filtre ne choisit pas des gagnants, il **supprime la queue de
+rug**.
+
+## Réserves inscrites avant la coupure
+
+**Zéro rug sur 51 trades ne prouve pas zéro.** Au taux de base de 4,24 %, on en
+attendait 2,2 ; observer 0 a une probabilité d'environ 11 %. C'est suggestif, pas
+établi. Le t de 6,17 porte sur les rendements, pas sur l'absence de rug.
+
+**L'effectif est faible et le filtre rare** : 51 trades sur 778, soit 6,6 %. À ce
+rythme il faut longtemps pour accumuler de quoi conclure.
+
+**La définition dépend du décodage de `coin_creator`**, non vérifié contre une
+source externe. Si ce champ désigne autre chose que le créateur du token, tout
+le raisonnement mécanique tombe — même si la corrélation, elle, subsisterait.
+
+## Échantillon minimal
+
+**300 trades**, effectif nécessaire pour distinguer un taux de rug de 1 % d'un
+taux d'équilibre de 4,68 % à 95 %. Au rythme observé de 6,6 % des détections,
+cela demande plusieurs mois — ou l'acceptation d'un verdict sur l'union v4+v5,
+qui accumule quatre fois plus vite.
+
+## Critères de décision
+
+**VALIDÉ** sur au moins 300 trades : taux de rug ≤ **2 %**, moyenne ≥ **1,003**,
+t ≥ **2,0**.
+**TUÉ** sur au moins 150 trades : taux de rug ≥ **4,68 %** ou moyenne < **0,995**.
+**NON CONCLUANT** sinon.
