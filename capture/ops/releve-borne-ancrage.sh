@@ -249,9 +249,10 @@ GROUP BY d.pool;
 
 DROP TABLE IF EXISTS tmp_rel_v4p;
 CREATE TABLE tmp_rel_v4p ENGINE = MergeTree ORDER BY pool AS
-SELECT g.pool AS pool, max(g.net) / greatest(any(g.base_res), 1) AS surplomb
+SELECT g.pool AS pool, max(g.net) / greatest(any(g.base_res), 1) AS surplomb,
+  maxIf(g.net, g.user = g.createur) AS net_createur
 FROM (
-  SELECT e.pool AS pool, t.user AS user,
+  SELECT e.pool AS pool, t.user AS user, any(t.coin_creator) AS createur,
     sum(if(t.is_buy = 1, toFloat64(t.base_amount), -toFloat64(t.base_amount))) AS net,
     argMax(toFloat64(t.base_reserves), t.event_timestamp) AS base_res
   FROM tmp_rel_v4s e INNER JOIN pumpswap_trades t ON t.pool = e.pool
@@ -260,6 +261,8 @@ FROM (
   GROUP BY e.pool, t.user) g
 GROUP BY g.pool;" || echec "construction v4"
 
+# $1 = condition d_entree en SQL. Sert a v4 (surplomb), v5 (createur acheteur)
+# et a leur union, qui accumule quatre fois plus vite que v5 seul.
 mesure_v4() {
   ch -q "
   SELECT concat(
@@ -275,7 +278,7 @@ mesure_v4() {
         if(i0 = 0, length(s.serie), i0) AS i_s
       FROM tmp_rel_v4s s INNER JOIN tmp_rel_v4p p ON p.pool = s.pool
       WHERE length(s.serie) > 2 AND s.serie[1].2 > 0 AND s.serie[1].3 >= 5
-        AND greatest(p.surplomb, 0) <= $SEUIL_SURPLOMB) v)"
+        AND ($1)) v)"
 }
 
 verdict_v4() { # $1 trades $2 taux_rug $3 moyenne $4 t
@@ -339,7 +342,8 @@ verdict_v4() { # $1 trades $2 taux_rug $3 moyenne $4 t
     echo
     journal "v3 — $n3 tokens, moyenne $m3, sans top 3 $st3, t $t3 — $v3"
   fi
-  IFS='|' read -r n4 r4 tr4 m4 med4 t4 pnl4 <<< "$(mesure_v4)"
+  COND_V4="greatest(p.surplomb,0) <= $SEUIL_SURPLOMB"
+  IFS='|' read -r n4 r4 tr4 m4 med4 t4 pnl4 <<< "$(mesure_v4 "$COND_V4")"
   if [ -n "${n4:-}" ]; then
     v4=$(verdict_v4 "$n4" "$tr4" "$m4" "$t4")
     echo "## Protocole v4 — étude 17 bis, montée tenue filtrée par le surplomb ≤ $SEUIL_SURPLOMB — coupure $COUPURE_V4 UTC"
@@ -361,9 +365,27 @@ verdict_v4() { # $1 trades $2 taux_rug $3 moyenne $4 t
     echo
     journal "v4 — $n4 trades, $r4 rugs ($tr4 %), moyenne $m4, t $t4, P&L $pnl4 SOL — $v4"
   fi
+  for duo in "v5|étude 28, le créateur acheteur|p.net_createur > 0" \
+             "v4+v5|union des deux filtres|greatest(p.surplomb,0) <= $SEUIL_SURPLOMB OR p.net_createur > 0"; do
+    nm=${duo%%|*}; rst=${duo#*|}; lib=${rst%%|*}; cond=${rst#*|}
+    IFS='|' read -r n5 r5 tr5 m5 med5 t5s pnl5 <<< "$(mesure_v4 "$cond")"
+    [ -n "${n5:-}" ] || continue
+    echo "## Protocole $nm — $lib — coupure $COUPURE_V4 UTC"
+    echo
+    echo "| Mesure | Valeur |"
+    echo "|---|---|"
+    echo "| Trades | **$n5** |"
+    echo "| Rugs | $r5 |"
+    echo "| **Taux de rug** | **$tr5 %** |"
+    echo "| Moyenne | $m5 |"
+    echo "| t | $t5s |"
+    echo "| P&L cumulé à 1 SOL | $pnl5 SOL |"
+    echo
+    journal "$nm — $n5 trades, $r5 rugs ($tr5 %), moyenne $m5, t $t5s, P&L $pnl5 SOL"
+  done
   echo "---"
   echo
-  echo "Les paramètres des quatre protocoles sont figés dans"
+  echo "Les paramètres des protocoles sont figés dans"
   echo "\`capture/etudes/PROTOCOLE-BORNE-ANCRAGE.md\`. Ce relevé ne les modifie pas."
 } > "$RAPPORT"
 
