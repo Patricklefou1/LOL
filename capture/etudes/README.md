@@ -22,7 +22,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 | 4 | Sortie sur net flow négatif / excès de vendeurs | ❌ inversé, instable selon l'âge | — |
 | 5 | Entrée au remplissage de courbe, sortie à la graduation | ❌ **tué** — le stop portait tout l'edge | `pregraduation.sql` |
 | 6 | **Persistance du PnL des wallets (smart money)** | ✅ **seul survivant** | — |
-| 7 | Élimination par historique de rug du dev | ⚠️ médiane oui, moyenne non | — |
+| 7 | Élimination par historique de rug du dev | ⚠️ **refait le 18/08** — un créateur à >90 % de rugs rend **0,5804 sur 429 tokens** contre 0,8920 pour un inconnu (4 763), mais 94 % des tokens tradés sont un premier lancement | — |
 | 8 | Copier les wallets d'élite (entrée après eux) | ❌ **inversé** — on achète leur sortie | — |
 | 9 | Sortie conditionnée au flux acheteur | ❌ attendre coûte plus que le meilleur fill | — |
 | 10 | Acheter toute graduation sur PumpSwap | ⚠️ médiane +1,2 % stable, moyenne à zéro | `pumpswap-decode.sql` |
@@ -37,10 +37,12 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
-| 28 | **Le créateur acheteur** | ⏳ **pré-enregistré le 19/08** — 0 rug sur 51 trades, écart-type divisé par 6 ; presque disjoint du surplomb, leur union donne 1,90 % de rug contre 4,24 % | `PROTOCOLE-BORNE-ANCRAGE.md` |
-| 17 bis | **Filtre de surplomb sur la montée tenue** | ⏳ **pré-enregistré le 19/08** — divise le taux de rug par deux (5,48 → 2,52 %), seul levier trouvé sur le paramètre décisif | `PROTOCOLE-BORNE-ANCRAGE.md` |
-| 27 | **La montée tenue** | ⏳ **hors échantillon en cours** — 92 tokens/jour, mais t = 0,42 : effet non significatif, 4 596 tokens requis | `PROTOCOLE-BORNE-ANCRAGE.md` |
-| 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0327 sur 19 tokens** (t = 1,40), variante à couloir 1,15 à 1,0562 sur 13 (t = 4,46) — 150 requis | `borne-ancrage.sql` |
+| 28 | **Le créateur acheteur** | ⏳ **pré-enregistré le 19/08** — réglage : **1,0330 sur 51 tokens, 0 rug**, écart-type 0,0382 (÷6) ; hors échantillon : 1 token | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 17 bis | **Filtre de surplomb sur la montée tenue** | ⏳ **pré-enregistré le 19/08** — réglage : **1,0287 sur 159 tokens**, rug 2,52 % contre 5,48 % ; hors échantillon : 3 tokens | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 25 | **Acheter la chute** | ❌ **monotone dans le mauvais sens** — 0,9456 sur 1 605 tokens à −30 %, **0,8236 sur 1 220** à −90 %, contre 0,9783 pour le marché | — |
+| 24 | **Ratio d'accélération à l'achat** | ❌ **aucun gradient** — quintiles de 0,9898 à 1,0207 sur 187 tokens, sans ordre | — |
+| 27 | **La montée tenue** | ⏳ **hors échantillon : 1,0088 sur 382 tokens** (t = 0,82) ; backtest **+3,50 SOL sur 778 tokens**, 33 rugs, équilibre à 4,68 % contre 4,24 % observés | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0135 sur 38 tokens** (couloir 1,10) et 1,0135 sur 43 (couloir 1,15) ; backtest **+1,25 SOL sur 45 tokens**, un seul rug — taux indéterminable | `borne-ancrage.sql` |
 | 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
 | 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
@@ -1362,6 +1364,104 @@ effet plus petit que son erreur standard. Il faudrait 4 596 tokens pour trancher
 
 **Règle : publier moyenne, écart-type et t, ou ne rien conclure.** Une médiane
 flatteuse sur un échantillon dispersé n'est pas un résultat, c'est un tirage.
+
+## Études 24 et 25 — les deux idées d'accélération, mesurées et mortes
+
+Proposées par l'utilisateur les 18 et 19/08. Mesurées sur le pipeline corrigé,
+sortie à 30 min, agrégation par token.
+
+### 24 — le ratio d'accélération à l'achat
+
+Volume acheté sur la bougie de signal, rapporté à la moyenne de l'heure de range.
+Distinct de l'étude 22, qui comptait des trades et non des SOL.
+
+| Quintile d'accélération | Tokens | Moyenne | Gagnants |
+|---|---|---|---|
+| 0,54 – 0,95 | 71 | 1,0150 | 94,9 % |
+| 0,95 – 1,02 | 58 | 0,9916 | 94,9 % |
+| 1,02 – 1,10 | 64 | 1,0207 | 98,0 % |
+| 1,10 – 1,45 | 68 | 0,9898 | 92,9 % |
+| 1,45 – 386 | 77 | 1,0099 | 87,8 % |
+
+**Aucun gradient.** Les moyennes oscillent sans ordre entre 0,9898 et 1,0207. Le
+seul indice est la baisse des gagnants de 94,9 % à 87,8 % quand l'accélération
+monte — le sens de l'étude 22, trop faible pour filtrer.
+
+### 25 — acheter la chute, avec ou sans épuisement des vendeurs
+
+| Profondeur | Tokens | Ventes ÷ 2 | Ventes normales |
+|---|---|---|---|
+| −30 à −50 % | ~1 605 | 0,9456 | 0,9489 |
+| −50 à −60 % | ~1 195 | 0,9306 | 0,9299 |
+| −60 à −70 % | ~1 082 | 0,8995 | 0,9269 |
+| −70 à −80 % | ~923 | 0,9026 | 0,9273 |
+| −80 à −90 % | ~759 | 0,8913 | 0,9028 |
+| −90 % et plus | ~1 220 | **0,8236** | 0,7241 |
+| *Baseline marché* | *3 710* | *0,9783* | |
+
+**Monotone dans le mauvais sens, sur six paliers.** Plus la chute est profonde,
+pire est la suite. Et l'épuisement des vendeurs aggrave au lieu d'aider.
+
+Le silence n'est pas un plancher, c'est la mort du token : les ventes ne
+s'arrêtent pas parce que les vendeurs sont épuisés, mais parce que plus personne
+ne trade.
+
+## Le backtest — 20 août 2026
+
+Première simulation séquentielle, 1 SOL par position, coûts et impact inclus.
+Les moyennes disaient 1,03 et 1,01 ; voici ce que cela fait en SOL.
+
+| | Étude 26 | Étude 27 |
+|---|---|---|
+| Tokens | 45 | **778** |
+| Trades | 83 | 778 |
+| **P&L** | **+1,25 SOL** | **+3,50 SOL** |
+| Par jour | 0,156 | 0,389 |
+| Rugs | **1** | **33** (4,24 %) |
+| Coût des rugs | −1,00 | −32,61 |
+| Gain de tout le reste | +2,25 | +36,12 |
+| Gain moyen d'un gagnant | +0,039 | +0,057 |
+
+**L'étude 27 encaisse 36,1 SOL et en rend 32,6.** Elle garde moins de 10 % de ce
+qu'elle gagne. Un rug efface 17,5 trades gagnants. Son taux d'équilibre est de
+**4,68 %** pour 4,24 % observés : **0,44 point de marge**.
+
+L'étude 26 affiche un meilleur ratio mais sur **un seul rug** : son taux réel
+pourrait être cinq fois supérieur sans contredire l'observation. Son backtest
+n'est pas rassurant, il est muet sur le seul paramètre qui compte.
+
+**Conséquence : la seule question qui vaille est de faire baisser le taux de
+rug.** Chaque dixième de point vaut 0,8 SOL sur 778 trades — plus que ce que la
+stratégie entière rapporte. C'est ce qui a produit les études 17 bis et 28.
+
+## Ce qui a été exploré et écarté — bilan du 20 août
+
+Balayage systématique sur 7 717 tokens et 350 560 bougies, mesure corrigée du
+biais de survivance, agrégation par token.
+
+| Famille | Ce qui a été testé | Résultat |
+|---|---|---|
+| Variables d'état | âge, heure, foule, déséquilibre, accélération, profondeur de baisse, taille de trade | tous négatifs |
+| Marché | régime de marché sur 30 min | 0,8336 à 0,9124 selon le régime |
+| Structures | retest, resserrement, consolidation haute | 1 occurrence, artefact, 0,9864 |
+| Sorties | durée fixe, stop, réintégration, stop d'activité, prise de profit ×4 | aucune ne bat la détention |
+| Mécanique du rug | `WithdrawEvent` décodé, offset 89 | **aucun trade après**, donc pas de précurseur |
+| Créateurs | récidive, graphe de financement | signal réel, couverture 6 % et 0,25 % |
+
+**Meilleure combinaison atteignable : 0,9753**, en empilant régime de marché,
+âge du pool et foule — significativement sous 1 (t = −3,00), contre 0,8048 pour
+l'entrée au hasard.
+
+**Il n'existe pas d'entrée systématique rentable dans cet espace.** Ce qui reste
+vivant repose sur une autre logique : attendre une configuration rare et sortir
+vite. La borne d'ancrage produit cinq signaux par jour sur 7 700 tokens.
+
+Deux découvertes techniques au passage. `WithdrawEvent` (19 588) et
+`DepositEvent` (3 135) sont capturés depuis le premier jour et **jamais
+décodés** ; le champ pool est à l'octet 89. Et un retrait de liquidité n'est
+suivi d'**aucun trade** — il n'annonce pas l'effondrement, il en est l'acte
+final, ce qui explique mécaniquement pourquoi aucune règle de sortie ne
+fonctionne.
 
 ## Erreur de méthode n° 17 — construire la mesure avant de vérifier la mécanique
 
