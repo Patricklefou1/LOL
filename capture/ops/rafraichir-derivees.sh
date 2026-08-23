@@ -186,6 +186,48 @@ if [ "${total_inseres:-0}" -gt 1000 ]; then
   fi
 fi
 
+# --- Volet 1 bis : extraction incrementale des evenements rares -------------
+# L_archive brute ne garde que 4 jours. Ces trois familles d_evenements ne sont
+# decodees nulle part ailleurs ; toute journee non extraite est perdue pour
+# toujours. Filigrane par slot, comme le decodage principal.
+for t in creations:CreatePoolEvent liquidity:WithdrawEvent,DepositEvent boost:BoostBuyAndBurn; do
+  nom=${t%%:*}
+  case "$nom" in
+    creations) filtre="event_name = 'CreatePoolEvent'"; taille=326
+      champs="reinterpretAsInt64(substring(b,1,8)) AS event_timestamp,
+        base58Encode(substring(b,166,32)) AS pool, base58Encode(substring(b,11,32)) AS creator,
+        base58Encode(substring(b,294,32)) AS coin_creator, base58Encode(substring(b,43,32)) AS base_mint,
+        base58Encode(substring(b,75,32)) AS quote_mint, base58Encode(substring(b,198,32)) AS lp_mint,
+        reinterpretAsUInt64(substring(b,125,8)) AS pool_base_amount,
+        reinterpretAsUInt64(substring(b,133,8)) AS pool_quote_amount,
+        reinterpretAsUInt64(substring(b,157,8)) AS lp_out,
+        reinterpretAsUInt8(substring(b,326,1)) AS is_mayhem_mode"
+      cible=pumpswap_creations ;;
+    liquidity) filtre="event_name IN ('WithdrawEvent','DepositEvent')"; taille=248
+      champs="CAST(ev AS String) AS event_name, reinterpretAsInt64(substring(b,1,8)) AS event_timestamp,
+        base58Encode(substring(b,89,32)) AS pool, base58Encode(substring(b,121,32)) AS user,
+        reinterpretAsUInt64(substring(b,9,8)) AS lp_amount, reinterpretAsUInt64(substring(b,81,8)) AS lp_supply,
+        reinterpretAsUInt64(substring(b,49,8)) AS base_reserves, reinterpretAsUInt64(substring(b,57,8)) AS quote_reserves,
+        reinterpretAsUInt64(substring(b,65,8)) AS base_amount, reinterpretAsUInt64(substring(b,73,8)) AS quote_amount"
+      cible=pumpswap_liquidity ;;
+    boost) filtre="discriminator = '3f451c16305cc2b9'"; taille=200
+      champs="reinterpretAsInt64(substring(b,1,8)) AS event_timestamp, base58Encode(substring(b,9,32)) AS mint,
+        base58Encode(substring(b,73,32)) AS pool, base58Encode(substring(b,105,32)) AS authority,
+        reinterpretAsUInt64(substring(b,137,8)) AS quote_in_requested, reinterpretAsUInt64(substring(b,145,8)) AS quote_in_used,
+        reinterpretAsUInt64(substring(b,153,8)) AS base_burned, reinterpretAsUInt64(substring(b,177,8)) AS quote_reserves_after,
+        reinterpretAsUInt64(substring(b,185,8)) AS base_reserves_after, reinterpretAsUInt64(substring(b,193,8)) AS boost_vault_remaining"
+      cible=pumpswap_boost ;;
+  esac
+  fil=$(ch -q "SELECT ifNull(max(slot),0) FROM $cible")
+  ajout=$(ch -q "
+    INSERT INTO $cible SELECT slot, signature, received_at, $champs
+    FROM (SELECT slot, signature, received_at, ev, base64Decode(payload) AS b
+          FROM (SELECT slot, signature, received_at, payload, event_name AS ev
+                FROM pumpswap_events WHERE $filtre AND slot > $fil AND slot <= $plafond))
+    WHERE length(b) = $taille" 2>&1 && ch -q "SELECT count() FROM $cible WHERE slot > $fil")
+  journal "$cible — ${ajout:-0} lignes ajoutees (filigrane slot $fil)"
+done
+
 # --- Volet 2 : resolution RPC des nouveaux pools ---------------------------
 avant=$(ch -q "SELECT count() FROM pumpswap_pools")
 if cd "$CAPTURE_DIR" && npm run --silent pools -- "$POOLS_MAX" >/dev/null 2>&1; then
