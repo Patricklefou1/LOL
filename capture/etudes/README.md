@@ -37,6 +37,7 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
+| 29 | **La cohorte d'ouverture** | ❌ **aucun gradient dans l'univers propre** — quintiles à 0,69 / 0,79 / 0,85 / 0,92 / 0,87 élagués sur 948 tokens chacun, sans ordre ; le gradient apparent (0,90 → 1,50) venait d'un plafond `rendement < 1000` et d'un univers pollué | — |
 | 28 | **Le créateur acheteur** | ⏳ **hors échantillon : 1,0677 sur 32 trades, 0 rug** (t = 4,04) — seul filtre encore intact | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 17 bis | **Filtre de surplomb sur la montée tenue** | ⚠️ **hors échantillon : 0,9947 sur 44 trades, rug 6,82 %** — au-dessus de son seuil de mort, pire que sans filtre | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 25 | **Acheter la chute** | ❌ **monotone dans le mauvais sens** — 0,9456 sur 1 605 tokens à −30 %, **0,8236 sur 1 220** à −90 %, contre 0,9783 pour le marché | — |
