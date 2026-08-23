@@ -272,7 +272,10 @@ mesure_v4() {
     if(count() >= 2 AND stddevSamp(x) > 0, toString(round((avg(x)-1)/(stddevSamp(x)/sqrt(count())),2)), 'n/a'), '|',
     toString(round(sum(x-1),3)))
   FROM (
-    SELECT (v.serie[i_s].2/v.serie[1].2)*(1-1.0/v.serie[1].3)*(1-1.0/v.serie[1].3)*0.994 AS x
+    -- 0,5 SOL d_impact de chaque cote : c_est ce que fixent les protocoles
+    -- pre-enregistres, et ce qu_appliquent deja v1, v2 et v3. La version
+    -- initiale utilisait 1 SOL, un ecart au pre-enregistrement.
+    SELECT (v.serie[i_s].2/v.serie[1].2)*(1-0.5/v.serie[1].3)*(1-0.5/v.serie[1].3)*0.994 AS x
     FROM (
       SELECT s.serie AS serie, arrayFirstIndex(y -> y.1 >= s.serie[1].1 + toIntervalSecond(900), s.serie) AS i0,
         if(i0 = 0, length(s.serie), i0) AS i_s

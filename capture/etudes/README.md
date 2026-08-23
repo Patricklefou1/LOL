@@ -37,12 +37,12 @@ clickhouse-client --password "$CLICKHOUSE_PASSWORD" -n < etudes/pregraduation.sq
 > survit pas au-delà de 30 minutes. Les chiffres du tableau sont ceux de la
 > refonte sur population certifiée SOL, seuls valides.
 
-| 28 | **Le créateur acheteur** | ⏳ **pré-enregistré le 19/08** — réglage : **1,0330 sur 51 tokens, 0 rug**, écart-type 0,0382 (÷6) ; hors échantillon : 1 token | `PROTOCOLE-BORNE-ANCRAGE.md` |
-| 17 bis | **Filtre de surplomb sur la montée tenue** | ⏳ **pré-enregistré le 19/08** — réglage : **1,0287 sur 159 tokens**, rug 2,52 % contre 5,48 % ; hors échantillon : 3 tokens | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 28 | **Le créateur acheteur** | ⏳ **hors échantillon : 1,0677 sur 32 trades, 0 rug** (t = 4,04) — seul filtre encore intact | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 17 bis | **Filtre de surplomb sur la montée tenue** | ⚠️ **hors échantillon : 0,9947 sur 44 trades, rug 6,82 %** — au-dessus de son seuil de mort, pire que sans filtre | `PROTOCOLE-BORNE-ANCRAGE.md` |
 | 25 | **Acheter la chute** | ❌ **monotone dans le mauvais sens** — 0,9456 sur 1 605 tokens à −30 %, **0,8236 sur 1 220** à −90 %, contre 0,9783 pour le marché | — |
 | 24 | **Ratio d'accélération à l'achat** | ❌ **aucun gradient** — quintiles de 0,9898 à 1,0207 sur 187 tokens, sans ordre | — |
-| 27 | **La montée tenue** | ⏳ **hors échantillon : 1,0088 sur 382 tokens** (t = 0,82) ; backtest **+3,50 SOL sur 778 tokens**, 33 rugs, équilibre à 4,68 % contre 4,24 % observés | `PROTOCOLE-BORNE-ANCRAGE.md` |
-| 26 | **Borne d'ancrage** | ⏳ **hors échantillon : 1,0135 sur 38 tokens** (couloir 1,10) et 1,0135 sur 43 (couloir 1,15) ; backtest **+1,25 SOL sur 45 tokens**, un seul rug — taux indéterminable | `borne-ancrage.sql` |
+| 27 | **La montée tenue** | ⏳ **hors échantillon : 1,0092 sur 820 tokens** (t = 1,18) ; backtest +3,50 SOL sur 778 tokens, équilibre à 4,68 % contre 4,24 % — seule stratégie encore au-dessus de 1 | `PROTOCOLE-BORNE-ANCRAGE.md` |
+| 26 | **Borne d'ancrage** | ❌ **passée sous 1 hors échantillon** — 0,9942 sur 82 tokens (couloir 1,10) et **0,9889 sur 109** (couloir 1,15, t = −2,08) ; les deux en tendance mort | `borne-ancrage.sql` |
 | 23 | **Range confirmé par oscillation** | ⚠️ **réduit le risque, pas la perte** — gagnants 44→70 %, moyenne inchangée | `range-confirme.sql` |
 | 22 | **Explosion du bruit** | ❌ **pire que l'achat au hasard** — 0,90 contre 0,96, et 3× plus de pertes lourdes | `explosion-du-bruit.sql` |
 | 21 | Le range en multi-heures | ❌ **l'effet ne survit pas au-delà de 30 min** — moyenne 0,9149 contre 0,9432 pour la baseline | `multi-heures.sql` |
@@ -1462,6 +1462,86 @@ décodés** ; le champ pool est à l'octet 89. Et un retrait de liquidité n'est
 suivi d'**aucun trade** — il n'annonce pas l'effondrement, il en est l'acte
 final, ce qui explique mécaniquement pourquoi aucune règle de sortie ne
 fonctionne.
+
+## Mise à jour du 23 août — le renversement
+
+### Les chiffres
+
+| Protocole | Moyenne | Effectif | Rugs | t | Tendance |
+|---|---|---|---|---|---|
+| V1 — borne 1,10 | **0,9942** | 82 / 150 | 2,98 % | −1,64 | mort |
+| V2 — borne 1,15 | **0,9889** | 109 / 150 | 4,53 % | **−2,08** | mort |
+| V3 — montée tenue | **1,0092** | 820 / 4 596 | 4,24 % | +1,18 | — |
+| V4 — surplomb | **0,9947** | 44 / 570 | **6,82 %** | −0,13 | — |
+| V5 — créateur acheteur | **1,0677** | 32 | **0 %** | +4,04 | — |
+| V4+V5 — union | 1,0239 | 75 / 300 | 4,00 % | +0,94 | — |
+
+**La borne d'ancrage est passée sous 1 sur ses deux variantes.** C'était la
+stratégie principale depuis le début ; ses deux protocoles sont en tendance mort,
+et V2 atteint un t de −2,08 à 109 tokens sur les 150 requis.
+
+**Le filtre de surplomb a encaissé ses trois premiers rugs** et affiche 6,82 % —
+au-dessus de son seuil de mort de 4,68 %, et pire que la population non filtrée
+à 4,24 %. Sa promesse était de diviser ce taux par deux.
+
+**Seul le créateur acheteur reste intact** : zéro rug sur 32 trades, t de 4,04.
+Mais 32 trades ne prouvent rien — au taux de base on en attendait 1,4.
+
+### La correction de fond : les rugs de l'étude 27 ne sont pas des rug-pulls
+
+Mesuré le 22/08 en croisant la population de l'étude 27 avec les 22 361 retraits
+de liquidité décodés :
+
+| | |
+|---|---|
+| Pools de l'étude 27 | 778 |
+| Ayant un événement de liquidité | **3** |
+| Rugs de l'étude 27 | 33 |
+| Rugs qui sont un retrait de liquidité | **0** |
+
+**Aucune des pertes qu'on subit n'est un retrait de liquidité.** Ce sont des
+ventes massives. Le commit `c100152` — « la perte est un retrait de liquidité,
+il n'existe aucun prix intermédiaire » — décrit une **population différente** :
+les pools qui meurent vite et ne produisent jamais neuf bougies vertes.
+
+La conclusion pratique reste pourtant la même, et c'est ce qui rend l'erreur
+subtile. Testé au fill réel sur la population de l'étude 27, un stop se remplit à
+**0,47 % du niveau visé** : la vente est aussi instantanée qu'un retrait. Le taux
+de pertes lourdes ne bouge pas d'un centième, quel que soit le seuil.
+
+### Ce que l'archive contenait sans qu'on le sache
+
+Les 25 événements de l'IDL PumpSwap ont été identifiés par force brute sur les
+discriminateurs, puis confirmés par l'IDL téléchargé. Cinq n'étaient dans aucune
+documentation résumée.
+
+| Événement | Par jour | Ce qu'il apprend |
+|---|---|---|
+| `ClaimCashbackEvent` | 194 040 | **17 821 SOL/jour** rendus aux traders, soit 0,45 % du volume — mais **12,9 % des traders seulement** y ont droit, et 35 % au mieux dans le décile supérieur. Dispositif conditionnel, pas un rabais automatique. |
+| `BoostBuyAndBurnEvent` | 11 684 | Rachat-destruction par le programme. **17,6 SOL médians sur 6 minutes**, soit 24 % des réserves du pool. **100 % des tokens de l'étude 27 en reçoivent**, contre 59,5 % de taux de base. |
+
+**Le boost explique le signal de l'étude 27.** Il fabrique mécaniquement les
+premières bougies vertes qui déclenchent la détection. Ce qu'on croyait être un
+opérateur qui tient un cours est un achat programmatique de dix-sept SOL.
+
+Il n'est pas exploitable pour autant : entrer au premier événement de boost donne
+une **médiane de 0,1155 à 30 minutes** sur 7 749 tokens, avec 60 % de pertes
+lourdes. Le boost marque la naissance du pool, donc son moment le plus meurtrier.
+L'étude 27 fonctionne précisément parce qu'elle **attend 45 minutes** que ce
+massacre soit passé.
+
+### Les ruggeurs sont concentrés mais invisibles
+
+22 361 retraits, 17 298 pools. **128 portefeuilles ont vidé plus de dix pools
+chacun** et pèsent 20 % de tous les rugs. Le retirant n'est le créateur du token
+que dans **11,7 %** des cas — ce sont deux acteurs distincts, ce qui fragilise le
+mécanisme invoqué par l'étude 28 même si son résultat empirique tient.
+
+Mais ils sont **invisibles avant d'agir** : 5,5 % seulement tradent dans le pool
+avant de le vider, médiane zéro trade. Ils détiennent le LP et le retirent, sans
+laisser de trace dans le flux. Une liste noire exigerait de lire la propriété des
+jetons LP par RPC — chiffré à 118 appels/jour, mais sans objet ici puisque zéro
+de nos pertes vient d'un retrait.
 
 ## Erreur de méthode n° 17 — construire la mesure avant de vérifier la mécanique
 
