@@ -1,0 +1,6 @@
+[Unit]
+Description=Verification de l'occupation disque pour la capture Pump.fun
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pumpfun-disk-check.sh

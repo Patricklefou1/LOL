@@ -1,0 +1,9 @@
+[Unit]
+Description=Verification disque quotidienne (capture Pump.fun)
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

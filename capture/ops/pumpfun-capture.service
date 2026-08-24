@@ -1,0 +1,14 @@
+[Unit]
+Description=Capture Pump.fun (Triton gRPC -> ClickHouse)
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+User=pumpfun
+WorkingDirectory=/opt/pumpfun/LOL/capture
+ExecStart=/usr/bin/env node dist/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

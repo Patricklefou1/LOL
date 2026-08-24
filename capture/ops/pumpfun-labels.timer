@@ -1,0 +1,9 @@
+[Unit]
+Description=Labellisation quotidienne (J-4, quand les horizons sont clos)
+
+[Timer]
+OnCalendar=*-*-* 06:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

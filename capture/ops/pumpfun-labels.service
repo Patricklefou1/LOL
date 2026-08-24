@@ -1,0 +1,10 @@
+[Unit]
+Description=Labellisation quotidienne des issues Pump.fun (token_summary, token_minute)
+After=clickhouse-server.service
+Requires=clickhouse-server.service
+
+[Service]
+Type=oneshot
+User=pumpfun
+WorkingDirectory=/opt/pumpfun/LOL/capture
+ExecStart=/usr/bin/env node dist/labels.js

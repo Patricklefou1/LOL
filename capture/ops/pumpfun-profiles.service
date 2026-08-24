@@ -1,0 +1,10 @@
+[Unit]
+Description=Bases proprietaires Pump.fun (empreintes de devs, PnL, clusters)
+After=clickhouse-server.service
+Requires=clickhouse-server.service
+
+[Service]
+Type=oneshot
+User=pumpfun
+WorkingDirectory=/opt/pumpfun/LOL/capture
+ExecStart=/usr/bin/env node dist/profiles.js
