@@ -1,0 +1,16 @@
+{
+  "name": "hyperliquid-alertes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Alerte mail a chaque trade execute sur Hyperliquid pour un wallet donne",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test-mail": "node index.js --test-mail"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "nodemailer": "^6.9.15"
+  }
+}

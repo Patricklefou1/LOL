@@ -1,0 +1,14 @@
+[Unit]
+Description=Alertes mail des trades Hyperliquid
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pumpfun
+WorkingDirectory=/opt/pumpfun/LOL/hyperliquid-alertes
+ExecStart=/usr/bin/env node index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
