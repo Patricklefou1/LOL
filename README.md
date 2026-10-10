@@ -7,6 +7,8 @@ Recherche, documentation et outillage autour du trading sur Pump.fun (Solana).
 - **[capture/](capture/)** — **Phases 1 et 2 en TypeScript** : capture en continu du programme Pump.fun via Triton Yellowstone gRPC vers ClickHouse (créations, trades, graduations, slots, transactions brutes rejouables, détection de trous, monitoring), plus l'outillage de phase 2 — labellisation des issues (`npm run labels` : token_summary + matrice token × minute × horizon) et réconciliation RPC des trous (`npm run reconcile`, avec mode `--verify` pour la DoD). Voir [capture/README.md](capture/README.md).
 - **[pumpfun-guide-pas-a-pas.md](pumpfun-guide-pas-a-pas.md)** — **Runbook de déploiement** : les 12 étapes ordonnées du VPS OVH nu à la capture en service permanent (Triton, sécurisation, Node, ClickHouse, clone, .env, migration, premier lancement, systemd, surveillance 48 h, validation), avec vérifications et remèdes aux pannes courantes à chaque étape.
 
+- **[coinbeacon/](coinbeacon/)** — Script Python rejouable qui mesure la rentabilité des détections CoinBeacon à 4 h et 24 h sur les bougies 1 min Binance : frais, doublons, comparaison à des entrées au hasard, sensibilité aux frais, contrôle des biais. Voir [coinbeacon/README.md](coinbeacon/README.md).
+
 ## Documentation
 
 - **[pumpfun-donnees-strategie.md](pumpfun-donnees-strategie.md)** — Référentiel complet des données exploitables pour une stratégie d'achat/revente sur Pump.fun : métriques de base (prix, volume, holders…), métriques dérivées (net flow, vélocité d'inflow…) et features d'expert (profil du déployeur, détection de bundles/snipers, clusters de wallets, smart money, wash trading, exécution), avec les sources de données et les pièges de backtest.
