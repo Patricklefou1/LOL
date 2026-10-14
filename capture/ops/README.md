@@ -48,10 +48,10 @@ retire les trois meilleurs d'un échantillon qui en compte un.
 
 ## `pumpfun-listings` — toutes les heures à hh:40
 
-Relevé des paires spot et des perps de six bourses centralisées (`src/listings.ts`, voir le
-README du module). Douze requêtes publiques par heure, sans clé d'API.
+Relevé des paires spot et des perps de huit bourses (`src/listings.ts`, voir le
+README du module). Seize requêtes publiques par heure, sans clé d'API.
 Avant d'activer le timer, `npm run listings -- --essai` vérifie que le VPS joint
-les douze sources : certaines bloquent des plages d'IP de centres de données.
+les seize sources : certaines bloquent des plages d'IP de centres de données.
 
 ```bash
 sudo systemctl enable --now pumpfun-listings.timer

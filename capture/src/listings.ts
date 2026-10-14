@@ -2,10 +2,11 @@ import { createClient, ClickHouseClient } from "@clickhouse/client";
 import { config } from "./config";
 import { sleep } from "./util";
 
-// Relevé des cotations spot et perps sur Binance, Coinbase, OKX, Bybit, KuCoin et Gate.
+// Relevé des cotations spot et perps sur Binance, Coinbase, OKX, Bybit, Hyperliquid,
+// KuCoin, Gate et MEXC.
 //
 //   npm run listings                  -- un relevé, écrit dans cex_paires
-//   npm run listings -- --essai       -- lit les douze sources, n'écrit rien
+//   npm run listings -- --essai       -- lit les seize sources, n'écrit rien
 //   npm run listings -- --rapport 15  -- événements par jour sur 15 jours
 //
 // Le rapport ne signale que deux événements :
@@ -32,23 +33,27 @@ interface Paire {
 interface Source {
   bourse: string;
   marche: Marche;
-  // 1 : Binance, Coinbase, OKX, Bybit. 2 : KuCoin, Gate, qui cotent beaucoup
-  // plus tôt et beaucoup plus de petits projets.
+  // 1 : Binance, Coinbase, OKX, Bybit, et les perps Hyperliquid. 2 : KuCoin,
+  // Gate, MEXC et le spot Hyperliquid, qui cotent beaucoup plus tôt et beaucoup
+  // plus de petits projets. Le rang est celui de la source, pas de la bourse.
   rang: 1 | 2;
   lire: () => Promise<Paire[]>;
 }
 
 // Tokens à effet de levier (BTC3L, ETH5S) : des produits de la bourse, pas des projets.
 const LEVIER = /\d+[LS]$/;
-// Multiplicateurs des tokens à très bas prix : 1000PEPE, 1MBABYDOGE, SHIB1000.
+// Multiplicateurs des tokens à très bas prix : 1000PEPE, 1MBABYDOGE, SHIB1000,
+// et kPEPE sur Hyperliquid (k minuscule, d'où le test avant la mise en majuscules).
 // Sans les retirer, le perp ne se rattache pas à son token et passe pour un lancement.
 const MULTIPLICATEUR_DEVANT = /^(1000000|100000|10000|1000|1M)(?=[A-Z])/;
+const MULTIPLICATEUR_K = /^k(?=[A-Z])/;
 const MULTIPLICATEUR_DERRIERE = /(?<=[A-Z])(1000000|100000|10000|1000)$/;
 // Tickers que certaines bourses écrivent autrement
 const ALIAS: Record<string, string> = { XBT: "BTC" };
 
 export function normaliserBase(brute: string): string {
   const base = String(brute)
+    .replace(MULTIPLICATEUR_K, "")
     .toUpperCase()
     .replace(MULTIPLICATEUR_DEVANT, "")
     .replace(MULTIPLICATEUR_DERRIERE, "");
@@ -62,6 +67,18 @@ async function getJson(url: string): Promise<any> {
     signal: AbortSignal.timeout(30_000),
   });
   if (!reponse.ok) throw new Error(`HTTP ${reponse.status} sur ${url}`);
+  return reponse.json();
+}
+
+// Hyperliquid n'a qu'un point d'entrée, en POST
+async function hyperliquid(type: string): Promise<any> {
+  const reponse = await fetch("https://api.hyperliquid.xyz/info", {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "pumpfun-capture/listings" },
+    body: JSON.stringify({ type }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!reponse.ok) throw new Error(`HTTP ${reponse.status} sur Hyperliquid ${type}`);
   return reponse.json();
 }
 
@@ -313,6 +330,78 @@ export const SOURCES: Source[] = [
       });
     },
   },
+  {
+    // Seul le dex principal est relevé : les perps HIP-3 des déployeurs tiers
+    // demandent une requête par dex et relèvent d'une autre logique de cotation
+    bourse: "hyperliquid",
+    marche: "perp",
+    rang: 1,
+    lire: async () => {
+      const j = await hyperliquid("meta");
+      return (j.universe as any[]).map((u) => ({
+        symbole: u.name,
+        base: u.name,
+        quote: "USDC",
+        actif: u.isDelisted !== true,
+        dateBourse: null,
+        premarche: false,
+      }));
+    },
+  },
+  {
+    // Le spot Hyperliquid est ouvert à tout déployeur qui remporte l'enchère :
+    // rang 2, et ses noms de tokens sont libres
+    bourse: "hyperliquid",
+    marche: "spot",
+    rang: 2,
+    lire: async () => {
+      const j = await hyperliquid("spotMeta");
+      const tokens = new Map<number, string>((j.tokens as any[]).map((t) => [t.index, t.name]));
+      return (j.universe as any[]).map((u) => ({
+        symbole: u.name,
+        base: tokens.get(u.tokens[0]) ?? "",
+        quote: tokens.get(u.tokens[1]) ?? "",
+        actif: true,
+        dateBourse: null,
+        premarche: false,
+      }));
+    },
+  },
+  {
+    bourse: "mexc",
+    marche: "spot",
+    rang: 2,
+    lire: async () => {
+      const j = await getJson("https://api.mexc.com/api/v3/exchangeInfo");
+      return (j.symbols as any[]).map((s) => ({
+        symbole: s.symbol,
+        base: s.baseAsset,
+        quote: s.quoteAsset,
+        // « 1 » en ligne, « 2 » en pause, « 3 » hors ligne ; ENABLED dans l'ancien format
+        actif: (s.status === "1" || s.status === "ENABLED") && s.isSpotTradingAllowed !== false,
+        dateBourse: null,
+        premarche: false,
+      }));
+    },
+  },
+  {
+    bourse: "mexc",
+    marche: "perp",
+    rang: 2,
+    lire: async () => {
+      const j = await getJson("https://contract.mexc.com/api/v1/contract/detail");
+      if (j.success !== true) throw new Error(`MEXC futures code ${j.code}`);
+      // Les contrats MEXC sont tous perpétuels. state : 0 actif, 4 en pause
+      return (j.data as any[]).map((c) => ({
+        symbole: c.symbol,
+        base: c.baseCoin,
+        quote: c.quoteCoin,
+        actif: c.state === 0,
+        dateBourse: null,
+        premarche: false,
+      }));
+    },
+  },
 ];
 
 // Normalise et filtre une liste brute. Les doublons de symbole (rares, mais
@@ -528,8 +617,12 @@ const EVENEMENTS = `
     AND le <  toStartOfDay(now())`;
 
 export async function rapport(ch: ClickHouseClient, jours: number): Promise<void> {
-  const rang1 = [...new Set(SOURCES.filter((s) => s.rang === 1).map((s) => `'${s.bourse}'`))].join(",");
-  const estRang1 = `hasAny(arrayConcat(bourses_spot, bourses_perp), [${rang1}])`;
+  const rang1 = (marche: Marche) =>
+    SOURCES.filter((s) => s.rang === 1 && s.marche === marche)
+      .map((s) => `'${s.bourse}'`)
+      .join(",");
+  const perpRang1 = `hasAny(bourses_perp, [${rang1("perp")}])`;
+  const estRang1 = `(hasAny(bourses_spot, [${rang1("spot")}]) OR ${perpRang1})`;
 
   const couverture = await (
     await ch.query({
@@ -561,7 +654,7 @@ export async function rapport(ch: ClickHouseClient, jours: number): Promise<void
                countIf(evenement = 'lancement' AND premarche) AS premarche,
                countIf(evenement = 'lancement' AND ${estRang1}) AS rang1,
                countIf(evenement = 'premier perp') AS premiers_perps,
-               countIf(evenement = 'premier perp' AND hasAny(bourses_perp, [${rang1}])) AS perps_rang1
+               countIf(evenement = 'premier perp' AND ${perpRang1}) AS perps_rang1
         FROM (${EVENEMENTS})
         GROUP BY jour ORDER BY jour`,
       query_params: { jours },
@@ -571,13 +664,13 @@ export async function rapport(ch: ClickHouseClient, jours: number): Promise<void
 
   const colonnes = ["lancements", "par_perp", "premarche", "rang1", "premiers_perps", "perps_rang1"];
   const entetes = ["lancements", "dont perp", "pré-marché", "rang 1", "1ers perps", "perps rang 1"];
-  console.log(`\njour        ${entetes.map((e) => e.padStart(12)).join("")}`);
+  console.log(`\njour        ${entetes.map((e) => e.padStart(13)).join("")}`);
   const totaux = colonnes.map(() => 0);
   for (const l of parJour) {
-    console.log(`${l.jour}  ${colonnes.map((c) => l[c].padStart(12)).join("")}`);
+    console.log(`${l.jour}  ${colonnes.map((c) => l[c].padStart(13)).join("")}`);
     colonnes.forEach((c, i) => (totaux[i] += Number(l[c])));
   }
-  console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(12)).join("")}`);
+  console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(13)).join("")}`);
 
   const detail = await (
     await ch.query({

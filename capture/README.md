@@ -317,8 +317,10 @@ Toujours joindre sur `est_sol = 1` dans une étude de prix ou de réserves.
 ### `npm run listings` — lancements et premiers perps sur les bourses centralisées
 
 Relève chaque heure (`pumpfun-listings.timer`) les paires spot **et** les contrats
-perpétuels de Binance, Coinbase, OKX, Bybit (rang 1), KuCoin et Gate (rang 2), soit
-douze sources. Une paire jamais vue est une cotation. Le rapport n'en retient que
+perpétuels de Binance, Coinbase, OKX, Bybit, Hyperliquid, KuCoin, Gate et MEXC,
+soit seize sources. Le rang 1 regroupe le spot et les perps de Binance, Coinbase,
+OKX et Bybit, plus les perps Hyperliquid ; le rang 2, KuCoin, Gate, MEXC et le spot
+Hyperliquid, ouvert à tout déployeur qui remporte l'enchère. Une paire jamais vue est une cotation. Le rapport n'en retient que
 deux événements :
 
 | Événement | Règle | Signalé |
@@ -328,7 +330,7 @@ deux événements :
 | Nouvelle paire ou nouveau perp d'un ticker déjà coté | | **jamais** |
 
 ```bash
-npm run listings -- --essai       # lit les douze sources, n'écrit rien : à lancer en premier
+npm run listings -- --essai       # lit les seize sources, n'écrit rien : à lancer en premier
 npm run listings                  # un relevé dans cex_paires
 npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur liste
 ```
@@ -344,12 +346,15 @@ npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur 
   le spot Binance, Bybit et KuCoin n'en publient pas : leurs cotations sont datées
   par le relevé, à l'heure près.
 - **La jointure se fait par ticker, multiplicateurs retirés** (1000PEPE, SHIB1000,
-  1MBABYDOGE → PEPE, SHIB, BABYDOGE ; XBT → BTC). Deux tokens différents peuvent
+  1MBABYDOGE, kPEPE → PEPE, SHIB, BABYDOGE, PEPE ; XBT → BTC). Deux tokens différents peuvent
   porter le même ticker, et un renommage passe pour un lancement.
 - **Le pré-marché n'est détecté que sur OKX et Bybit**, seules API qui le déclarent.
-- **« Jamais vu sur les six » ne veut pas dire « nouveau projet »** : un token qui
-  tourne depuis des mois sur MEXC ou un DEX est un lancement le jour où il arrive
-  sur Gate.
+- **« Jamais vu sur les huit » ne veut pas dire « nouveau projet »** : un token qui
+  tourne depuis des mois sur un DEX est un lancement le jour où il arrive sur MEXC.
+  À l'inverse, un ticker déjà pris par un token sans rapport, sur MEXC ou sur le spot
+  Hyperliquid, masque le vrai lancement d'un projet qui porte le même nom.
+- **MEXC et Hyperliquid ne publient aucune date de cotation** : elles sont datées
+  par le relevé. Seul le dex principal d'Hyperliquid est relevé, pas les perps HIP-3.
 - **Un relevé refusé n'est pas une absence de cotation.** Plus de 20 % de paires
   nouvelles d'un coup sur une source signale un changement de format : le relevé
   est refusé et journalisé dans `cex_releves`. Le rapport affiche les relevés
