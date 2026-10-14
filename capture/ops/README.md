@@ -57,6 +57,23 @@ les seize sources : certaines bloquent des plages d'IP de centres de données.
 sudo systemctl enable --now pumpfun-listings.timer
 ```
 
+## `recap-listings.sh` — chaque matin à 07h00, heure de Paris
+
+Envoie par mail les événements de la veille, avec la liste de ceux qui touchent
+une bourse de rang 1, puis les moyennes sur 15 jours. Le sujet porte `[ALERTE]`
+si une source a échoué dans la journée : les cotations de l'heure manquée sont
+alors datées en retard.
+
+Envoi par `msmtp` (`sudo apt install msmtp`), configuré uniquement par `../.env` :
+`MAIL_TO`, `SMTP_USER`, `SMTP_PASSWORD`, et en option `SMTP_HOST`, `SMTP_PORT`.
+Pour Gmail, `SMTP_PASSWORD` est un **mot de passe d'application**. Test immédiat :
+`sudo -u pumpfun /opt/pumpfun/bin/recap-listings.sh`.
+
+```bash
+sudo ln -sf /opt/pumpfun/LOL/capture/ops/recap-listings.sh /opt/pumpfun/bin/
+sudo systemctl enable --now pumpfun-recap-listings.timer
+```
+
 ## Installation
 
 Les scripts sont exposés sous `/opt/pumpfun/bin/` par des **liens symboliques**

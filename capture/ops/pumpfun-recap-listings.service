@@ -1,0 +1,12 @@
+[Unit]
+Description=Recap quotidien des listings par mail
+Documentation=file:/opt/pumpfun/bin/recap-listings.sh
+After=clickhouse-server.service network-online.target
+Wants=clickhouse-server.service network-online.target
+
+[Service]
+Type=oneshot
+User=pumpfun
+ExecStart=/opt/pumpfun/bin/recap-listings.sh
+Nice=10
+IOSchedulingClass=idle

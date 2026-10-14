@@ -1,0 +1,11 @@
+[Unit]
+Description=Envoi du recap des listings chaque matin
+
+[Timer]
+# 07h00 heure de Paris, ete comme hiver. Le releve de hh:40 a deja couvert
+# toute la veille.
+OnCalendar=*-*-* 07:00:00 Europe/Paris
+Persistent=true
+
+[Install]
+WantedBy=timers.target

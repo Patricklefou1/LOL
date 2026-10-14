@@ -8,6 +8,7 @@ import { sleep } from "./util";
 //   npm run listings                  -- un relevé, écrit dans cex_paires
 //   npm run listings -- --essai       -- lit les seize sources, n'écrit rien
 //   npm run listings -- --rapport 15  -- événements par jour sur 15 jours
+//   npm run listings -- --rapport 15 --sans-detail  -- le tableau seul, sans la liste
 //
 // Le rapport ne signale que deux événements :
 //   - lancement : un ticker jamais coté nulle part, ni en spot ni en perp. S'il
@@ -616,7 +617,7 @@ const EVENEMENTS = `
   WHERE le >= toStartOfDay(now()) - INTERVAL {jours:UInt32} DAY
     AND le <  toStartOfDay(now())`;
 
-export async function rapport(ch: ClickHouseClient, jours: number): Promise<void> {
+export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = true): Promise<void> {
   const rang1 = (marche: Marche) =>
     SOURCES.filter((s) => s.rang === 1 && s.marche === marche)
       .map((s) => `'${s.bourse}'`)
@@ -672,6 +673,8 @@ export async function rapport(ch: ClickHouseClient, jours: number): Promise<void
   }
   console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(13)).join("")}`);
 
+  if (!avecDetail) return;
+
   const detail = await (
     await ch.query({
       query: `SELECT evenement, base, toString(le) AS le, par_perp, premarche, bourses_spot, bourses_perp
@@ -716,7 +719,7 @@ async function main(): Promise<void> {
 
   const iRapport = args.indexOf("--rapport");
   if (iRapport !== -1) {
-    await rapport(ch, Number(args[iRapport + 1] ?? 15) || 15);
+    await rapport(ch, Number(args[iRapport + 1] ?? 15) || 15, !args.includes("--sans-detail"));
   } else {
     // Même horodatage pour toutes les sources : un relevé est un instant
     const maintenant = Date.now();
