@@ -2,15 +2,22 @@ import { createClient, ClickHouseClient } from "@clickhouse/client";
 import { config } from "./config";
 import { sleep } from "./util";
 
-// Relevé des cotations sur Binance, Coinbase, OKX, Bybit, KuCoin et Gate.
+// Relevé des cotations spot et perps sur Binance, Coinbase, OKX, Bybit, KuCoin et Gate.
 //
 //   npm run listings                  -- un relevé, écrit dans cex_paires
-//   npm run listings -- --essai       -- lit les six bourses, n'écrit rien
-//   npm run listings -- --rapport 15  -- lancements par jour sur 15 jours
+//   npm run listings -- --essai       -- lit les douze sources, n'écrit rien
+//   npm run listings -- --rapport 15  -- événements par jour sur 15 jours
 //
-// Un « lancement » est un ticker jamais coté auparavant sur aucune des six
-// bourses. Le premier relevé d'une bourse sert de référence : tout ce qu'il
-// voit est marqué `initiale` et ne compte jamais comme un lancement.
+// Le rapport ne signale que deux événements :
+//   - lancement : un ticker jamais coté nulle part, ni en spot ni en perp. S'il
+//     arrive d'abord en perp, il est marqué comme tel, et pré-marché le cas échéant.
+//   - premier perp : le premier contrat perpétuel d'un ticker déjà coté en spot.
+// Une paire ou un perp de plus sur un ticker déjà coté n'est jamais signalé.
+//
+// Le premier relevé de chaque source sert de référence : ce qu'il voit sans
+// date déclarée par la bourse est réputé ancien et ne compte jamais.
+
+type Marche = "spot" | "perp";
 
 interface Paire {
   symbole: string;
@@ -19,10 +26,12 @@ interface Paire {
   actif: boolean;
   // date de cotation déclarée par la bourse, en ms, quand elle en publie une
   dateBourse: number | null;
+  premarche: boolean;
 }
 
-interface Bourse {
-  nom: string;
+interface Source {
+  bourse: string;
+  marche: Marche;
   // 1 : Binance, Coinbase, OKX, Bybit. 2 : KuCoin, Gate, qui cotent beaucoup
   // plus tôt et beaucoup plus de petits projets.
   rang: 1 | 2;
@@ -31,6 +40,20 @@ interface Bourse {
 
 // Tokens à effet de levier (BTC3L, ETH5S) : des produits de la bourse, pas des projets.
 const LEVIER = /\d+[LS]$/;
+// Multiplicateurs des tokens à très bas prix : 1000PEPE, 1MBABYDOGE, SHIB1000.
+// Sans les retirer, le perp ne se rattache pas à son token et passe pour un lancement.
+const MULTIPLICATEUR_DEVANT = /^(1000000|100000|10000|1000|1M)(?=[A-Z])/;
+const MULTIPLICATEUR_DERRIERE = /(?<=[A-Z])(1000000|100000|10000|1000)$/;
+// Tickers que certaines bourses écrivent autrement
+const ALIAS: Record<string, string> = { XBT: "BTC" };
+
+export function normaliserBase(brute: string): string {
+  const base = String(brute)
+    .toUpperCase()
+    .replace(MULTIPLICATEUR_DEVANT, "")
+    .replace(MULTIPLICATEUR_DERRIERE, "");
+  return ALIAS[base] ?? base;
+}
 
 async function getJson(url: string): Promise<any> {
   const reponse = await fetch(url, {
@@ -47,9 +70,33 @@ function ms(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export const BOURSES: Bourse[] = [
+function secondes(v: unknown): number | null {
+  const n = ms(v);
+  return n === null ? null : n * 1000;
+}
+
+// Bybit pagine ; le plafond de pages évite une boucle infinie si le curseur
+// cesse un jour de se vider
+async function bybit(categorie: string): Promise<any[]> {
+  const liste: any[] = [];
+  let curseur = "";
+  for (let page = 0; page < 20; page++) {
+    const url =
+      `https://api.bybit.com/v5/market/instruments-info?category=${categorie}&limit=1000` +
+      (curseur ? `&cursor=${encodeURIComponent(curseur)}` : "");
+    const j = await getJson(url);
+    if (j.retCode !== 0) throw new Error(`Bybit retCode ${j.retCode} : ${j.retMsg}`);
+    liste.push(...j.result.list);
+    curseur = j.result.nextPageCursor ?? "";
+    if (!curseur) return liste;
+  }
+  throw new Error(`Bybit ${categorie} : pagination non terminée après 20 pages`);
+}
+
+export const SOURCES: Source[] = [
   {
-    nom: "binance",
+    bourse: "binance",
+    marche: "spot",
     rang: 1,
     lire: async () => {
       const j = await getJson("https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT");
@@ -59,11 +106,32 @@ export const BOURSES: Bourse[] = [
         quote: s.quoteAsset,
         actif: s.status === "TRADING",
         dateBourse: null,
+        premarche: false,
       }));
     },
   },
   {
-    nom: "coinbase",
+    bourse: "binance",
+    marche: "perp",
+    rang: 1,
+    lire: async () => {
+      const j = await getJson("https://fapi.binance.com/fapi/v1/exchangeInfo");
+      return (j.symbols as any[])
+        .filter((s) => s.contractType === "PERPETUAL")
+        .map((s) => ({
+          symbole: s.symbol,
+          base: s.baseAsset,
+          quote: s.quoteAsset,
+          actif: s.status === "TRADING",
+          dateBourse: ms(s.onboardDate),
+          // l'API publique ne distingue pas le pré-marché Binance
+          premarche: false,
+        }));
+    },
+  },
+  {
+    bourse: "coinbase",
+    marche: "spot",
     rang: 1,
     lire: async () => {
       const j = await getJson("https://api.exchange.coinbase.com/products");
@@ -73,11 +141,32 @@ export const BOURSES: Bourse[] = [
         quote: p.quote_currency,
         actif: p.status === "online" && !p.trading_disabled,
         dateBourse: null,
+        premarche: false,
       }));
     },
   },
   {
-    nom: "okx",
+    // Les perps de Coinbase sont sur sa bourse internationale, pas sur le spot
+    bourse: "coinbase",
+    marche: "perp",
+    rang: 1,
+    lire: async () => {
+      const j = await getJson("https://api.international.coinbase.com/api/v1/instruments");
+      return (j as any[])
+        .filter((i) => i.type === "PERP")
+        .map((i) => ({
+          symbole: i.symbol,
+          base: i.base_asset_name,
+          quote: i.quote_asset_name,
+          actif: i.trading_state === "TRADING",
+          dateBourse: null,
+          premarche: false,
+        }));
+    },
+  },
+  {
+    bourse: "okx",
+    marche: "spot",
     rang: 1,
     lire: async () => {
       const j = await getJson("https://www.okx.com/api/v5/public/instruments?instType=SPOT");
@@ -88,40 +177,72 @@ export const BOURSES: Bourse[] = [
         quote: i.quoteCcy,
         actif: i.state === "live",
         dateBourse: ms(i.listTime),
+        premarche: i.ruleType === "pre_market",
       }));
     },
   },
   {
-    nom: "bybit",
+    bourse: "okx",
+    marche: "perp",
     rang: 1,
     lire: async () => {
-      const paires: Paire[] = [];
-      let curseur = "";
-      // Bybit pagine ; le plafond de pages évite une boucle infinie si le
-      // curseur cesse un jour de se vider
-      for (let page = 0; page < 20; page++) {
-        const url =
-          "https://api.bybit.com/v5/market/instruments-info?category=spot&limit=1000" +
-          (curseur ? `&cursor=${encodeURIComponent(curseur)}` : "");
-        const j = await getJson(url);
-        if (j.retCode !== 0) throw new Error(`Bybit retCode ${j.retCode} : ${j.retMsg}`);
-        for (const i of j.result.list as any[]) {
-          paires.push({
-            symbole: i.symbol,
-            base: i.baseCoin,
-            quote: i.quoteCoin,
-            actif: i.status === "Trading",
-            dateBourse: null,
-          });
-        }
-        curseur = j.result.nextPageCursor ?? "";
-        if (!curseur) return paires;
-      }
-      throw new Error("Bybit : pagination non terminée après 20 pages");
+      const j = await getJson("https://www.okx.com/api/v5/public/instruments?instType=SWAP");
+      if (j.code !== "0") throw new Error(`OKX code ${j.code} : ${j.msg}`);
+      // uly vaut « BTC-USDT » : ctValCcy ne convient pas, il vaut « USD » sur
+      // les contrats inverses
+      return (j.data as any[]).map((i) => {
+        const [base, quote] = String(i.uly ?? i.instFamily ?? "").split("-");
+        return {
+          symbole: i.instId,
+          base,
+          quote,
+          actif: i.state === "live",
+          dateBourse: ms(i.listTime),
+          premarche: i.ruleType === "pre_market",
+        };
+      });
     },
   },
   {
-    nom: "kucoin",
+    bourse: "bybit",
+    marche: "spot",
+    rang: 1,
+    lire: async () =>
+      (await bybit("spot")).map((i) => ({
+        symbole: i.symbol,
+        base: i.baseCoin,
+        quote: i.quoteCoin,
+        actif: i.status === "Trading",
+        dateBourse: null,
+        premarche: false,
+      })),
+  },
+  {
+    bourse: "bybit",
+    marche: "perp",
+    rang: 1,
+    lire: async () =>
+      (await bybit("linear"))
+        // LinearFutures : contrats à échéance, pas des perps
+        .filter((i) => i.contractType === "LinearPerpetual")
+        .map((i) => {
+          const premarche = i.isPreListing === true;
+          return {
+            symbole: i.symbol,
+            base: i.baseCoin,
+            quote: i.quoteCoin,
+            // en pré-marché, la négociation continue se fait sous le statut PreLaunch
+            actif:
+              i.status === "Trading" ||
+              (premarche && i.preListingInfo?.curAuctionPhase === "ContinuousTrading"),
+            dateBourse: ms(i.launchTime),
+            premarche,
+          };
+        }),
+  },
+  {
+    bourse: "kucoin",
+    marche: "spot",
     rang: 2,
     lire: async () => {
       const j = await getJson("https://api.kucoin.com/api/v2/symbols");
@@ -132,11 +253,33 @@ export const BOURSES: Bourse[] = [
         quote: s.quoteCurrency,
         actif: s.enableTrading === true,
         dateBourse: null,
+        premarche: false,
       }));
     },
   },
   {
-    nom: "gate",
+    bourse: "kucoin",
+    marche: "perp",
+    rang: 2,
+    lire: async () => {
+      const j = await getJson("https://api-futures.kucoin.com/api/v1/contracts/active");
+      if (j.code !== "200000") throw new Error(`KuCoin futures code ${j.code}`);
+      return (j.data as any[])
+        // FFWCSX : perpétuel ; FFICSX : contrat à échéance
+        .filter((c) => c.type === "FFWCSX")
+        .map((c) => ({
+          symbole: c.symbol,
+          base: c.baseCurrency,
+          quote: c.quoteCurrency,
+          actif: c.status === "Open",
+          dateBourse: ms(c.firstOpenDate),
+          premarche: false,
+        }));
+    },
+  },
+  {
+    bourse: "gate",
+    marche: "spot",
     rang: 2,
     lire: async () => {
       const j = await getJson("https://api.gateio.ws/api/v4/spot/currency_pairs");
@@ -146,8 +289,28 @@ export const BOURSES: Bourse[] = [
         quote: p.quote,
         actif: p.trade_status === "tradable",
         // buy_start est en secondes, 0 pour les paires anciennes
-        dateBourse: ms(p.buy_start) === null ? null : Number(p.buy_start) * 1000,
+        dateBourse: secondes(p.buy_start),
+        premarche: false,
       }));
+    },
+  },
+  {
+    bourse: "gate",
+    marche: "perp",
+    rang: 2,
+    lire: async () => {
+      const j = await getJson("https://api.gateio.ws/api/v4/futures/usdt/contracts");
+      return (j as any[]).map((c) => {
+        const [base, quote] = String(c.name).split("_");
+        return {
+          symbole: c.name,
+          base,
+          quote,
+          actif: !c.in_delisting && (c.status ?? "trading") === "trading",
+          dateBourse: secondes(c.launch_time ?? c.create_time),
+          premarche: false,
+        };
+      });
     },
   },
 ];
@@ -158,9 +321,8 @@ export function nettoyer(brutes: Paire[]): Paire[] {
   const parSymbole = new Map<string, Paire>();
   for (const p of brutes) {
     if (!p.symbole || !p.base || !p.quote) continue;
-    const base = String(p.base).toUpperCase();
-    if (LEVIER.test(base)) continue;
-    const propre = { ...p, base, quote: String(p.quote).toUpperCase() };
+    if (LEVIER.test(String(p.base).toUpperCase())) continue;
+    const propre = { ...p, base: normaliserBase(p.base), quote: String(p.quote).toUpperCase() };
     const deja = parSymbole.get(p.symbole);
     if (!deja || (!deja.actif && propre.actif)) parSymbole.set(p.symbole, propre);
   }
@@ -185,21 +347,26 @@ function chDate(msEpoch: number): string {
   return new Date(msEpoch).toISOString().slice(0, 19).replace("T", " ");
 }
 
+function nomSource(s: Source): string {
+  return `${s.bourse} ${s.marche}`;
+}
+
 interface Connue {
   symbole: string;
   vu_le: string;
   ouvert_le: string | null;
   date_bourse: string | null;
   initiale: number;
+  premarche: number;
 }
 
-export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, maintenant: number): Promise<void> {
+export async function releverSource(ch: ClickHouseClient, source: Source, maintenant: number): Promise<void> {
   let paires: Paire[];
   try {
-    paires = nettoyer(await avecReprise(bourse.lire));
+    paires = nettoyer(await avecReprise(source.lire));
   } catch (err) {
-    console.error(`[listings] ${bourse.nom} : échec du relevé : ${err}`);
-    await journal(ch, bourse.nom, maintenant, 0, 0, String(err));
+    console.error(`[listings] ${nomSource(source)} : échec du relevé : ${err}`);
+    await journal(ch, source, maintenant, 0, 0, String(err));
     return;
   }
 
@@ -207,9 +374,10 @@ export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, mainte
   const lignes = await (
     await ch.query({
       query: `SELECT symbole, toString(vu_le) AS vu_le, toString(ouvert_le) AS ouvert_le,
-                     toString(date_bourse) AS date_bourse, initiale
-              FROM cex_paires FINAL WHERE bourse = {bourse:String}`,
-      query_params: { bourse: bourse.nom },
+                     toString(date_bourse) AS date_bourse, initiale, premarche
+              FROM cex_paires FINAL
+              WHERE bourse = {bourse:String} AND marche = {marche:String}`,
+      query_params: { bourse: source.bourse, marche: source.marche },
       format: "JSONEachRow",
     })
   ).json<Connue>();
@@ -225,7 +393,8 @@ export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, mainte
     if (!connue) {
       nouvelles++;
       aEcrire.push({
-        bourse: bourse.nom,
+        bourse: source.bourse,
+        marche: source.marche,
         symbole: p.symbole,
         base: p.base,
         quote: p.quote,
@@ -233,11 +402,14 @@ export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, mainte
         ouvert_le: p.actif ? maintenantCh : null,
         date_bourse: p.dateBourse === null ? null : chDate(p.dateBourse),
         initiale: premier ? 1 : 0,
+        premarche: p.premarche ? 1 : 0,
       });
     } else if (connue.ouvert_le === null && p.actif) {
-      // Paire annoncée lors d'un relevé précédent, échangeable depuis celui-ci
+      // Paire annoncée lors d'un relevé précédent, échangeable depuis celui-ci.
+      // Le drapeau pré-marché est conservé : c'est ainsi qu'elle a démarré.
       aEcrire.push({
-        bourse: bourse.nom,
+        bourse: source.bourse,
+        marche: source.marche,
         symbole: p.symbole,
         base: p.base,
         quote: p.quote,
@@ -245,6 +417,7 @@ export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, mainte
         ouvert_le: maintenantCh,
         date_bourse: connue.date_bourse,
         initiale: connue.initiale,
+        premarche: connue.premarche,
       });
     }
   }
@@ -255,8 +428,8 @@ export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, mainte
   const plafond = Math.max(50, connues.size * 0.2);
   if (!premier && nouvelles > plafond) {
     const erreur = `${nouvelles} paires nouvelles pour ${connues.size} connues : format modifié ? relevé refusé`;
-    console.error(`[listings] ${bourse.nom} : ${erreur}`);
-    await journal(ch, bourse.nom, maintenant, paires.length, 0, erreur);
+    console.error(`[listings] ${nomSource(source)} : ${erreur}`);
+    await journal(ch, source, maintenant, paires.length, 0, erreur);
     return;
   }
 
@@ -264,16 +437,16 @@ export async function releverBourse(ch: ClickHouseClient, bourse: Bourse, mainte
     await ch.insert({ table: "cex_paires", values: aEcrire, format: "JSONEachRow" });
   }
   // Le relevé de référence ne voit aucune cotation, seulement l'existant
-  await journal(ch, bourse.nom, maintenant, paires.length, premier ? 0 : nouvelles, "");
+  await journal(ch, source, maintenant, paires.length, premier ? 0 : nouvelles, "");
   console.log(
-    `[listings] ${bourse.nom} : ${paires.length} paires, ` +
+    `[listings] ${nomSource(source)} : ${paires.length} paires, ` +
       (premier ? "relevé de référence" : `${nouvelles} nouvelles`),
   );
 }
 
 async function journal(
   ch: ClickHouseClient,
-  bourse: string,
+  source: Source,
   maintenant: number,
   paires: number,
   nouvelles: number,
@@ -281,119 +454,158 @@ async function journal(
 ): Promise<void> {
   await ch.insert({
     table: "cex_releves",
-    values: [{ releve_le: chDate(maintenant), bourse, paires, nouvelles, erreur }],
+    values: [
+      { releve_le: chDate(maintenant), bourse: source.bourse, marche: source.marche, paires, nouvelles, erreur },
+    ],
     format: "JSONEachRow",
   });
 }
 
 async function essai(): Promise<void> {
-  for (const bourse of BOURSES) {
+  for (const source of SOURCES) {
+    const nom = nomSource(source).padEnd(14);
     try {
-      const paires = nettoyer(await avecReprise(bourse.lire));
+      const paires = nettoyer(await avecReprise(source.lire));
       const actives = paires.filter((p) => p.actif).length;
       const datees = paires.filter((p) => p.dateBourse !== null).length;
-      const bases = new Set(paires.map((p) => p.base)).size;
+      const premarche = paires.filter((p) => p.premarche).length;
+      const tickers = new Set(paires.map((p) => p.base)).size;
+      const recentes = paires
+        .filter((p) => p.dateBourse !== null)
+        .sort((a, b) => b.dateBourse! - a.dateBourse!)
+        .slice(0, 3)
+        .map((p) => `${p.base} ${chDate(p.dateBourse!).slice(0, 10)}`);
       console.log(
-        `${bourse.nom.padEnd(9)} ${String(paires.length).padStart(5)} paires, ` +
-          `${actives} actives, ${bases} tickers, ${datees} datées par la bourse`,
+        `${nom} ${String(paires.length).padStart(5)} paires, ${actives} actives, ${tickers} tickers, ` +
+          `${datees} datées, ${premarche} en pré-marché` +
+          (recentes.length ? ` — plus récentes : ${recentes.join(", ")}` : ""),
       );
     } catch (err) {
-      console.log(`${bourse.nom.padEnd(9)} ÉCHEC : ${err}`);
+      console.log(`${nom} ÉCHEC : ${err}`);
     }
   }
 }
 
-// Date de lancement d'un ticker : la plus ancienne date connue parmi ses paires.
-// Une paire du relevé de référence sans date de bourse rend le ticker
-// « incertain » : il était peut-être coté là bien avant.
-const LANCEMENTS = `
+// Une date par paire. Une paire du relevé de référence sans date de bourse est
+// réputée ancienne (epoch 0) : elle peut masquer un vrai lancement des premiers
+// jours, mais jamais en inventer un. Une paire jamais ouverte n'a pas de date.
+// Les deux événements sont ensuite calculés par ticker, spot et perp séparés.
+const EVENEMENTS = `
   WITH
     paires AS (
-      SELECT bourse, base,
-             coalesce(date_bourse, if(initiale = 1, NULL, ouvert_le)) AS d,
-             (initiale = 1 AND date_bourse IS NULL) AS inconnue
+      SELECT bourse, marche, base, premarche,
+             if(initiale = 1 AND date_bourse IS NULL,
+                toDateTime(0),
+                coalesce(date_bourse, ouvert_le)) AS d
       FROM cex_paires FINAL
     ),
     tickers AS (
       SELECT base,
-             min(d) AS lancement,
-             max(inconnue) AS incertain,
-             arraySort(groupUniqArray(bourse)) AS bourses
+             minIf(d, marche = 'spot') AS spot_d,
+             minIf(d, marche = 'perp') AS perp_d,
+             argMinIf(premarche, d, marche = 'perp' AND d IS NOT NULL) AS perp_premarche,
+             arraySort(groupUniqArrayIf(bourse, marche = 'spot' AND d IS NOT NULL)) AS bourses_spot,
+             arraySort(groupUniqArrayIf(bourse, marche = 'perp' AND d IS NOT NULL)) AS bourses_perp
       FROM paires
       GROUP BY base
+    ),
+    evenements AS (
+      SELECT 'lancement' AS evenement, base,
+             if(spot_d IS NULL, perp_d, if(perp_d IS NULL, spot_d, least(spot_d, perp_d))) AS le,
+             (perp_d IS NOT NULL AND (spot_d IS NULL OR perp_d < spot_d)) AS par_perp,
+             (par_perp AND perp_premarche = 1) AS premarche,
+             bourses_spot, bourses_perp
+      FROM tickers
+      UNION ALL
+      SELECT 'premier perp' AS evenement, base, perp_d AS le,
+             1 AS par_perp, (perp_premarche = 1) AS premarche,
+             bourses_spot, bourses_perp
+      FROM tickers
+      WHERE spot_d IS NOT NULL AND perp_d > spot_d
     )
-  SELECT * FROM tickers
-  WHERE lancement >= toStartOfDay(now()) - INTERVAL {jours:UInt32} DAY
-    AND lancement <  toStartOfDay(now())`;
+  SELECT * FROM evenements
+  WHERE le >= toStartOfDay(now()) - INTERVAL {jours:UInt32} DAY
+    AND le <  toStartOfDay(now())`;
 
-async function rapport(ch: ClickHouseClient, jours: number): Promise<void> {
-  const rang1 = BOURSES.filter((b) => b.rang === 1).map((b) => `'${b.nom}'`).join(",");
-
-  const parJour = await (
-    await ch.query({
-      query: `
-        SELECT toString(toDate(lancement)) AS jour,
-               count() AS lancements,
-               countIf(NOT incertain) AS certains,
-               countIf(hasAny(bourses, [${rang1}])) AS rang1,
-               countIf(length(bourses) >= 2) AS multi
-        FROM (${LANCEMENTS})
-        GROUP BY jour ORDER BY jour`,
-      query_params: { jours },
-      format: "JSONEachRow",
-    })
-  ).json<{ jour: string; lancements: string; certains: string; rang1: string; multi: string }>();
+export async function rapport(ch: ClickHouseClient, jours: number): Promise<void> {
+  const rang1 = [...new Set(SOURCES.filter((s) => s.rang === 1).map((s) => `'${s.bourse}'`))].join(",");
+  const estRang1 = `hasAny(arrayConcat(bourses_spot, bourses_perp), [${rang1}])`;
 
   const couverture = await (
     await ch.query({
       query: `
-        SELECT bourse,
+        SELECT bourse, marche,
                toString(min(releve_le)) AS depuis,
                countIf(erreur = '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS ok,
                countIf(erreur != '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS echecs
-        FROM cex_releves GROUP BY bourse ORDER BY bourse`,
+        FROM cex_releves GROUP BY bourse, marche ORDER BY bourse, marche`,
       query_params: { jours },
       format: "JSONEachRow",
     })
-  ).json<{ bourse: string; depuis: string; ok: string; echecs: string }>();
+  ).json<{ bourse: string; marche: string; depuis: string; ok: string; echecs: string }>();
 
   console.log(`Couverture du relevé (${jours} derniers jours) :`);
   for (const c of couverture) {
-    console.log(`  ${c.bourse.padEnd(9)} depuis ${c.depuis}, ${c.ok} relevés réussis, ${c.echecs} échecs`);
-  }
-
-  console.log(`\njour        lancements  certains  rang 1  ≥2 bourses`);
-  const total = { lancements: 0, certains: 0, rang1: 0, multi: 0 };
-  for (const l of parJour) {
     console.log(
-      `${l.jour}  ${l.lancements.padStart(10)}  ${l.certains.padStart(8)}  ` +
-        `${l.rang1.padStart(6)}  ${l.multi.padStart(10)}`,
+      `  ${`${c.bourse} ${c.marche}`.padEnd(14)} depuis ${c.depuis}, ` +
+        `${c.ok} relevés réussis, ${c.echecs} échecs`,
     );
-    total.lancements += Number(l.lancements);
-    total.certains += Number(l.certains);
-    total.rang1 += Number(l.rang1);
-    total.multi += Number(l.multi);
   }
-  const moy = (n: number) => (n / jours).toFixed(1);
-  console.log(
-    `moyenne/j   ${moy(total.lancements).padStart(10)}  ${moy(total.certains).padStart(8)}  ` +
-      `${moy(total.rang1).padStart(6)}  ${moy(total.multi).padStart(10)}`,
-  );
 
-  const detail = await (
+  const parJour = await (
     await ch.query({
-      query: `SELECT base, toString(lancement) AS lancement, incertain, bourses
-              FROM (${LANCEMENTS})
-              WHERE hasAny(bourses, [${rang1}]) ORDER BY lancement DESC`,
+      query: `
+        SELECT toString(toDate(le)) AS jour,
+               countIf(evenement = 'lancement') AS lancements,
+               countIf(evenement = 'lancement' AND par_perp) AS par_perp,
+               countIf(evenement = 'lancement' AND premarche) AS premarche,
+               countIf(evenement = 'lancement' AND ${estRang1}) AS rang1,
+               countIf(evenement = 'premier perp') AS premiers_perps,
+               countIf(evenement = 'premier perp' AND hasAny(bourses_perp, [${rang1}])) AS perps_rang1
+        FROM (${EVENEMENTS})
+        GROUP BY jour ORDER BY jour`,
       query_params: { jours },
       format: "JSONEachRow",
     })
-  ).json<{ base: string; lancement: string; incertain: number; bourses: string[] }>();
+  ).json<Record<string, string>>();
 
-  console.log(`\nLancements cotés sur au moins une bourse de rang 1 :`);
+  const colonnes = ["lancements", "par_perp", "premarche", "rang1", "premiers_perps", "perps_rang1"];
+  const entetes = ["lancements", "dont perp", "pré-marché", "rang 1", "1ers perps", "perps rang 1"];
+  console.log(`\njour        ${entetes.map((e) => e.padStart(12)).join("")}`);
+  const totaux = colonnes.map(() => 0);
+  for (const l of parJour) {
+    console.log(`${l.jour}  ${colonnes.map((c) => l[c].padStart(12)).join("")}`);
+    colonnes.forEach((c, i) => (totaux[i] += Number(l[c])));
+  }
+  console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(12)).join("")}`);
+
+  const detail = await (
+    await ch.query({
+      query: `SELECT evenement, base, toString(le) AS le, par_perp, premarche, bourses_spot, bourses_perp
+              FROM (${EVENEMENTS})
+              WHERE ${estRang1} ORDER BY le DESC`,
+      query_params: { jours },
+      format: "JSONEachRow",
+    })
+  ).json<{
+    evenement: string;
+    base: string;
+    le: string;
+    par_perp: number;
+    premarche: number;
+    bourses_spot: string[];
+    bourses_perp: string[];
+  }>();
+
+  console.log(`\nÉvénements touchant au moins une bourse de rang 1 :`);
   for (const d of detail) {
+    const quoi =
+      d.evenement === "lancement"
+        ? `lancement${d.par_perp ? " par perp" : ""}${d.premarche ? " (pré-marché)" : ""}`
+        : `premier perp${d.premarche ? " (pré-marché)" : ""}`;
     console.log(
-      `  ${d.lancement}  ${d.base.padEnd(12)} ${d.bourses.join(", ")}${d.incertain ? "  (incertain)" : ""}`,
+      `  ${d.le}  ${d.base.padEnd(12)} ${quoi.padEnd(32)} ` +
+        `spot : ${d.bourses_spot.join(", ") || "—"} | perp : ${d.bourses_perp.join(", ") || "—"}`,
     );
   }
 }
@@ -413,9 +625,9 @@ async function main(): Promise<void> {
   if (iRapport !== -1) {
     await rapport(ch, Number(args[iRapport + 1] ?? 15) || 15);
   } else {
-    // Même horodatage pour les six bourses : un relevé est un instant
+    // Même horodatage pour toutes les sources : un relevé est un instant
     const maintenant = Date.now();
-    for (const bourse of BOURSES) await releverBourse(ch, bourse, maintenant);
+    for (const source of SOURCES) await releverSource(ch, source, maintenant);
   }
   await ch.close();
 }

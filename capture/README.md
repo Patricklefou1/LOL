@@ -314,40 +314,46 @@ Leurs réserves lues comme des SOL donnaient des « 54 millions », et un pool d
 le côté base est vidé voit son prix exploser sans qu'on puisse rien y vendre.
 Toujours joindre sur `est_sol = 1` dans une étude de prix ou de réserves.
 
-### `npm run listings` — lancements de projets sur les bourses centralisées
+### `npm run listings` — lancements et premiers perps sur les bourses centralisées
 
-Compte les lancements de projets cotés sur Binance, Coinbase, OKX, Bybit (rang 1),
-KuCoin et Gate (rang 2), pour comparer avec le flux de Pump.fun. Aucune de ces
-bourses ne publie l'historique de ses cotations : le script photographie leurs
-listes de paires spot chaque heure (`pumpfun-listings.timer`), et une paire jamais
-vue est une cotation. Un **lancement** est un ticker jamais coté sur aucune des six.
+Relève chaque heure (`pumpfun-listings.timer`) les paires spot **et** les contrats
+perpétuels de Binance, Coinbase, OKX, Bybit (rang 1), KuCoin et Gate (rang 2), soit
+douze sources. Une paire jamais vue est une cotation. Le rapport n'en retient que
+deux événements :
+
+| Événement | Règle | Signalé |
+|---|---|---|
+| **Lancement** | ticker jamais coté nulle part, ni en spot ni en perp | oui, marqué *par perp* s'il démarre en perp, et *pré-marché* le cas échéant |
+| **Premier perp** | premier contrat perpétuel d'un ticker déjà coté en spot | oui |
+| Nouvelle paire ou nouveau perp d'un ticker déjà coté | | **jamais** |
 
 ```bash
-npm run listings -- --essai       # lit les six bourses, n'écrit rien : à lancer en premier
+npm run listings -- --essai       # lit les douze sources, n'écrit rien : à lancer en premier
 npm run listings                  # un relevé dans cex_paires
-npm run listings -- --rapport 15  # lancements par jour sur 15 jours
+npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur liste
 ```
-
-Le rapport donne par jour : les lancements, ceux dont la date est **certaine**,
-ceux cotés sur au moins une bourse de **rang 1**, et ceux cotés sur **au moins deux**
-bourses. Le critère « sérieux » le plus robuste est la dernière colonne combinée
-au rang 1 : Gate et KuCoin cotent aussi beaucoup de memecoins.
 
 **À savoir avant de lire un chiffre :**
 
-- **Le premier relevé est une référence, pas une mesure.** Tout ce qu'il voit est
-  marqué `initiale` et ne compte jamais. La mesure propre commence donc au
-  lancement du timer : 15 jours de moyenne demandent 15 jours de relevé.
-- **Seules OKX (`listTime`) et Gate (`buy_start`) donnent un historique.** Le
-  rapport l'utilise dès le premier jour, mais un ticker aussi présent dans la
-  référence d'une bourse sans date est marqué *incertain* : il y était peut-être
-  coté bien avant.
-- **La jointure se fait par ticker.** Deux tokens différents peuvent porter le
-  même ticker sur deux bourses, et un renommage de ticker passe pour un lancement.
-- **Un relevé refusé n'est pas une absence de cotation.** Si une bourse renvoie
-  plus de 20 % de paires nouvelles d'un coup, le format a probablement changé : le
-  relevé est refusé et l'erreur journalisée dans `cex_releves`. Le rapport affiche
-  le nombre de relevés réussis et échoués par bourse.
+- **Le premier relevé est une référence.** Ce qu'il voit sans date déclarée par la
+  bourse est réputé ancien. C'est volontairement conservateur : un vrai lancement
+  des jours précédents peut être manqué, un token ancien n'est jamais signalé.
+- **Les dates déclarées donnent un historique dès le premier jour** : OKX
+  (`listTime`), Gate (`buy_start`, `create_time`), et pour les perps Binance
+  (`onboardDate`), Bybit (`launchTime`) et KuCoin (`firstOpenDate`). Coinbase,
+  le spot Binance, Bybit et KuCoin n'en publient pas : leurs cotations sont datées
+  par le relevé, à l'heure près.
+- **La jointure se fait par ticker, multiplicateurs retirés** (1000PEPE, SHIB1000,
+  1MBABYDOGE → PEPE, SHIB, BABYDOGE ; XBT → BTC). Deux tokens différents peuvent
+  porter le même ticker, et un renommage passe pour un lancement.
+- **Le pré-marché n'est détecté que sur OKX et Bybit**, seules API qui le déclarent.
+- **« Jamais vu sur les six » ne veut pas dire « nouveau projet »** : un token qui
+  tourne depuis des mois sur MEXC ou un DEX est un lancement le jour où il arrive
+  sur Gate.
+- **Un relevé refusé n'est pas une absence de cotation.** Plus de 20 % de paires
+  nouvelles d'un coup sur une source signale un changement de format : le relevé
+  est refusé et journalisé dans `cex_releves`. Le rapport affiche les relevés
+  réussis et échoués par source.
 
 ### `npm run profiles` — devs, wallets, clusters
 
