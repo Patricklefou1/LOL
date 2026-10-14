@@ -314,6 +314,41 @@ Leurs réserves lues comme des SOL donnaient des « 54 millions », et un pool d
 le côté base est vidé voit son prix exploser sans qu'on puisse rien y vendre.
 Toujours joindre sur `est_sol = 1` dans une étude de prix ou de réserves.
 
+### `npm run listings` — lancements de projets sur les bourses centralisées
+
+Compte les lancements de projets cotés sur Binance, Coinbase, OKX, Bybit (rang 1),
+KuCoin et Gate (rang 2), pour comparer avec le flux de Pump.fun. Aucune de ces
+bourses ne publie l'historique de ses cotations : le script photographie leurs
+listes de paires spot chaque heure (`pumpfun-listings.timer`), et une paire jamais
+vue est une cotation. Un **lancement** est un ticker jamais coté sur aucune des six.
+
+```bash
+npm run listings -- --essai       # lit les six bourses, n'écrit rien : à lancer en premier
+npm run listings                  # un relevé dans cex_paires
+npm run listings -- --rapport 15  # lancements par jour sur 15 jours
+```
+
+Le rapport donne par jour : les lancements, ceux dont la date est **certaine**,
+ceux cotés sur au moins une bourse de **rang 1**, et ceux cotés sur **au moins deux**
+bourses. Le critère « sérieux » le plus robuste est la dernière colonne combinée
+au rang 1 : Gate et KuCoin cotent aussi beaucoup de memecoins.
+
+**À savoir avant de lire un chiffre :**
+
+- **Le premier relevé est une référence, pas une mesure.** Tout ce qu'il voit est
+  marqué `initiale` et ne compte jamais. La mesure propre commence donc au
+  lancement du timer : 15 jours de moyenne demandent 15 jours de relevé.
+- **Seules OKX (`listTime`) et Gate (`buy_start`) donnent un historique.** Le
+  rapport l'utilise dès le premier jour, mais un ticker aussi présent dans la
+  référence d'une bourse sans date est marqué *incertain* : il y était peut-être
+  coté bien avant.
+- **La jointure se fait par ticker.** Deux tokens différents peuvent porter le
+  même ticker sur deux bourses, et un renommage de ticker passe pour un lancement.
+- **Un relevé refusé n'est pas une absence de cotation.** Si une bourse renvoie
+  plus de 20 % de paires nouvelles d'un coup, le format a probablement changé : le
+  relevé est refusé et l'erreur journalisée dans `cex_releves`. Le rapport affiche
+  le nombre de relevés réussis et échoués par bourse.
+
 ### `npm run profiles` — devs, wallets, clusters
 
 Reconstruit intégralement trois tables dérivées (ce sont des agrégats de toute

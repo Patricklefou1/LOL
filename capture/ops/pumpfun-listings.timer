@@ -1,0 +1,9 @@
+[Unit]
+Description=Releve horaire des cotations sur les bourses centralisees
+
+[Timer]
+OnCalendar=*-*-* *:40:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

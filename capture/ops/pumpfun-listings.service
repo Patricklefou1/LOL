@@ -1,0 +1,13 @@
+[Unit]
+Description=Releve des cotations sur six bourses centralisees (Binance, Coinbase, OKX, Bybit, KuCoin, Gate)
+After=clickhouse-server.service network-online.target
+Requires=clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pumpfun
+WorkingDirectory=/opt/pumpfun/LOL/capture
+ExecStart=/usr/bin/env node dist/listings.js
+Nice=10
+IOSchedulingClass=idle

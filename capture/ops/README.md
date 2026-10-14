@@ -46,6 +46,17 @@ protocole. Sans ce garde-fou, le passage du 16/08 avait déclaré v2 « TUÉ » 
 un seul token — la statistique « sans top 3 » valant mécaniquement 0 quand on
 retire les trois meilleurs d'un échantillon qui en compte un.
 
+## `pumpfun-listings` — toutes les heures à hh:40
+
+Relevé des paires spot de six bourses centralisées (`src/listings.ts`, voir le
+README du module). Une requête publique par bourse et par heure, sans clé d'API.
+Avant d'activer le timer, `npm run listings -- --essai` vérifie que le VPS joint
+les six bourses : certaines bloquent des plages d'IP de centres de données.
+
+```bash
+sudo systemctl enable --now pumpfun-listings.timer
+```
+
 ## Installation
 
 Les scripts sont exposés sous `/opt/pumpfun/bin/` par des **liens symboliques**
