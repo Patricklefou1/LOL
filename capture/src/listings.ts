@@ -41,6 +41,12 @@ interface Source {
   lire: () => Promise<Paire[]>;
 }
 
+// Actions, ETF, matières premières et devises tokenisés ou en perp : les bourses
+// les cotent par dizaines chaque semaine, ce ne sont pas des projets crypto.
+// Appliqué au champ de catégorie que chaque bourse publie.
+const TRADFI = /stock|equity|tradfi|commod|forex|metal|index/i;
+const estTradfi = (...valeurs: unknown[]) => valeurs.some((v) => typeof v === "string" && TRADFI.test(v));
+
 // Tokens à effet de levier (BTC3L, ETH5S) : des produits de la bourse, pas des projets.
 const LEVIER = /\d+[LS]$/;
 // Multiplicateurs des tokens à très bas prix : 1000PEPE, 1MBABYDOGE, SHIB1000,
@@ -135,15 +141,15 @@ export const SOURCES: Source[] = [
     lire: async () => {
       const j = await getJson("https://fapi.binance.com/fapi/v1/exchangeInfo");
       return (j.symbols as any[])
-        .filter((s) => s.contractType === "PERPETUAL")
+        // TRADIFI_PERPETUAL et underlyingType EQUITY : actions
+        .filter((s) => s.contractType === "PERPETUAL" && !estTradfi(s.underlyingType))
         .map((s) => ({
           symbole: s.symbol,
           base: s.baseAsset,
           quote: s.quoteAsset,
           actif: s.status === "TRADING",
           dateBourse: ms(s.onboardDate),
-          // l'API publique ne distingue pas le pré-marché Binance
-          premarche: false,
+          premarche: s.underlyingType === "PREMARKET",
         }));
     },
   },
@@ -171,12 +177,13 @@ export const SOURCES: Source[] = [
     lire: async () => {
       const j = await getJson("https://api.international.coinbase.com/api/v1/instruments");
       return (j as any[])
-        .filter((i) => i.type === "PERP")
+        .filter((i) => i.type === "PERP" && !estTradfi(i.underlying_type))
         .map((i) => ({
           symbole: i.symbol,
           base: i.base_asset_name,
           quote: i.quote_asset_name,
-          actif: i.trading_state === "TRADING",
+          // PAUSED est fréquent, BTC-PERP compris : le contrat reste coté
+          actif: ["TRADING", "PAUSED", "LIMIT_ONLY", "POST_ONLY", "CANCEL_ONLY"].includes(i.trading_state),
           dateBourse: null,
           premarche: false,
         }));
@@ -189,7 +196,8 @@ export const SOURCES: Source[] = [
     lire: async () => {
       const j = await getJson("https://www.okx.com/api/v5/public/instruments?instType=SPOT");
       if (j.code !== "0") throw new Error(`OKX code ${j.code} : ${j.msg}`);
-      return (j.data as any[]).map((i) => ({
+      // instCategory : 1 crypto, 3 actions
+      return (j.data as any[]).filter((i) => (i.instCategory ?? "1") === "1").map((i) => ({
         symbole: i.instId,
         base: i.baseCcy,
         quote: i.quoteCcy,
@@ -208,7 +216,7 @@ export const SOURCES: Source[] = [
       if (j.code !== "0") throw new Error(`OKX code ${j.code} : ${j.msg}`);
       // uly vaut « BTC-USDT » : ctValCcy ne convient pas, il vaut « USD » sur
       // les contrats inverses
-      return (j.data as any[]).map((i) => {
+      return (j.data as any[]).filter((i) => (i.instCategory ?? "1") === "1").map((i) => {
         const [base, quote] = String(i.uly ?? i.instFamily ?? "").split("-");
         return {
           symbole: i.instId,
@@ -226,7 +234,10 @@ export const SOURCES: Source[] = [
     marche: "spot",
     rang: 1,
     lire: async () =>
-      (await bybit("spot")).map((i) => ({
+      (await bybit("spot"))
+        // symbolType xstocks : actions tokenisées
+        .filter((i) => !estTradfi(i.symbolType))
+        .map((i) => ({
         symbole: i.symbol,
         base: i.baseCoin,
         quote: i.quoteCoin,
@@ -242,7 +253,7 @@ export const SOURCES: Source[] = [
     lire: async () =>
       (await bybit("linear"))
         // LinearFutures : contrats à échéance, pas des perps
-        .filter((i) => i.contractType === "LinearPerpetual")
+        .filter((i) => i.contractType === "LinearPerpetual" && !estTradfi(i.symbolType))
         .map((i) => {
           const premarche = i.isPreListing === true;
           return {
@@ -265,7 +276,8 @@ export const SOURCES: Source[] = [
     lire: async () => {
       const j = await getJson("https://api.kucoin.com/api/v2/symbols");
       if (j.code !== "200000") throw new Error(`KuCoin code ${j.code}`);
-      return (j.data as any[]).map((s) => ({
+      // market « Stocks » : actions tokenisées
+      return (j.data as any[]).filter((s) => !estTradfi(s.market)).map((s) => ({
         symbole: s.symbol,
         base: s.baseCurrency,
         quote: s.quoteCurrency,
@@ -284,7 +296,8 @@ export const SOURCES: Source[] = [
       if (j.code !== "200000") throw new Error(`KuCoin futures code ${j.code}`);
       return (j.data as any[])
         // FFWCSX : perpétuel ; FFICSX : contrat à échéance
-        .filter((c) => c.type === "FFWCSX")
+        // assetClass STOCK : actions
+        .filter((c) => c.type === "FFWCSX" && !estTradfi(c.assetClass, c.subMarketType))
         .map((c) => ({
           symbole: c.symbol,
           base: c.baseCurrency,
@@ -301,7 +314,8 @@ export const SOURCES: Source[] = [
     rang: 2,
     lire: async () => {
       const j = await getJson("https://api.gateio.ws/api/v4/spot/currency_pairs");
-      return (j as any[]).map((p) => ({
+      // Pas de champ de catégorie : xStocks et Ondo se reconnaissent à leur nom
+      return (j as any[]).filter((p) => !/xStock|Tokenized/i.test(p.base_name ?? "")).map((p) => ({
         symbole: p.id,
         base: p.base,
         quote: p.quote,
@@ -318,7 +332,7 @@ export const SOURCES: Source[] = [
     rang: 2,
     lire: async () => {
       const j = await getJson("https://api.gateio.ws/api/v4/futures/usdt/contracts");
-      return (j as any[]).map((c) => {
+      return (j as any[]).filter((c) => !estTradfi(c.contract_type)).map((c) => {
         const [base, quote] = String(c.name).split("_");
         return {
           symbole: c.name,
@@ -326,7 +340,7 @@ export const SOURCES: Source[] = [
           quote,
           actif: !c.in_delisting && (c.status ?? "trading") === "trading",
           dateBourse: secondes(c.launch_time ?? c.create_time),
-          premarche: false,
+          premarche: c.is_pre_market === true,
         };
       });
     },
@@ -393,13 +407,14 @@ export const SOURCES: Source[] = [
       const j = await getJson("https://contract.mexc.com/api/v1/contract/detail");
       if (j.success !== true) throw new Error(`MEXC futures code ${j.code}`);
       // Les contrats MEXC sont tous perpétuels. state : 0 actif, 4 en pause
-      return (j.data as any[]).map((c) => ({
+      return (j.data as any[]).filter((c) => !estTradfi(...(c.conceptPlate ?? []))).map((c) => ({
         symbole: c.symbol,
         base: c.baseCoin,
         quote: c.quoteCoin,
         actif: c.state === 0,
-        dateBourse: null,
-        premarche: false,
+        // openingTime vaut 0 une fois ouvert ; createTime date la création
+        dateBourse: ms(c.openingTime) ?? ms(c.createTime),
+        premarche: c.preMarket === true,
       }));
     },
   },

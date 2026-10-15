@@ -348,7 +348,12 @@ npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur 
 - **La jointure se fait par ticker, multiplicateurs retirés** (1000PEPE, SHIB1000,
   1MBABYDOGE, kPEPE → PEPE, SHIB, BABYDOGE, PEPE ; XBT → BTC). Deux tokens différents peuvent
   porter le même ticker, et un renommage passe pour un lancement.
-- **Le pré-marché n'est détecté que sur OKX et Bybit**, seules API qui le déclarent.
+- **Les actions, ETF et matières premières sont exclus** grâce au champ de catégorie
+  de chaque bourse : OKX `instCategory`, Bybit `symbolType`, KuCoin `assetClass` et
+  `market`, Gate `contract_type` et le nom xStock ou Ondo en spot, Binance
+  `underlyingType`. Binance spot, MEXC spot et Hyperliquid n'en publient pas.
+- **Le pré-marché est détecté sur OKX, Bybit, Gate et MEXC**, seules API qui le
+  déclarent.
 - **« Jamais vu sur les huit » ne veut pas dire « nouveau projet »** : un token qui
   tourne depuis des mois sur un DEX est un lancement le jour où il arrive sur MEXC.
   À l'inverse, un ticker déjà pris par un token sans rapport, sur MEXC ou sur le spot
