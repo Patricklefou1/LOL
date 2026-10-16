@@ -1,5 +1,6 @@
 import { createClient, ClickHouseClient } from "@clickhouse/client";
 import { config } from "./config";
+import { essaiCoingecko, rapportCoingecko, releverCoingecko } from "./coingecko";
 import { sleep } from "./util";
 
 // Relevé des cotations spot et perps sur Binance, Coinbase, OKX, Bybit, Hyperliquid,
@@ -745,7 +746,7 @@ Couverture (${jours} j) : ${SOURCES.length - absentes.length - enEchec.length} s
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.includes("--essai")) return essai();
+  if (args.includes("--essai")) return essai().then(essaiCoingecko);
 
   const ch = createClient({
     url: config.clickhouse.url,
@@ -756,11 +757,14 @@ async function main(): Promise<void> {
 
   const iRapport = args.indexOf("--rapport");
   if (iRapport !== -1) {
-    await rapport(ch, Number(args[iRapport + 1] ?? 15) || 15, !args.includes("--sans-detail"));
+    const jours = Number(args[iRapport + 1] ?? 15) || 15;
+    await rapport(ch, jours, !args.includes("--sans-detail"));
+    await rapportCoingecko(ch, jours, !args.includes("--sans-detail"));
   } else {
     // Même horodatage pour toutes les sources : un relevé est un instant
     const maintenant = Date.now();
     for (const source of SOURCES) await releverSource(ch, source, maintenant);
+    await releverCoingecko(ch, maintenant);
   }
   await ch.close();
 }

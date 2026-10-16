@@ -365,6 +365,20 @@ npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur 
   est refusé et journalisé dans `cex_releves`. Le rapport affiche les relevés
   réussis et échoués par source.
 
+#### Source CoinGecko — les lancements sur DEX
+
+Les bourses centralisées ne voient pas un token lancé sur PancakeSwap ou Raydium.
+CoinGecko le référence après vérification, en général un à trois jours après la
+création du pool. Chaque relevé lit la liste complète de CoinGecko, avec les
+adresses de contrat ; un identifiant jamais vu est un ajout. Le rapport liste les
+ajouts dont le volume sur 24 h dépasse `COINGECKO_VOLUME_MIN` (100 000 $ par
+défaut), avec leur chaîne, leur adresse de contrat et les bourses qui les cotent
+déjà, ou « DEX seulement ».
+
+Clé « Demo » gratuite dans `.env` : `COINGECKO_API_KEY`. Sans clé, la source est
+ignorée sans gêner le reste du relevé. Le relevé horaire consomme environ
+50 appels par jour sur les 10 000 par mois de l'offre.
+
 ### `npm run profiles` — devs, wallets, clusters
 
 Reconstruit intégralement trois tables dérivées (ce sont des agrégats de toute
