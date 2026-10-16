@@ -676,14 +676,14 @@ export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = 
       query_params: { jours },
       format: "JSONEachRow",
     })
-  ).json<Record<string, string>>();
+  ).json<Record<string, string | number>>();
 
   const colonnes = ["lancements", "par_perp", "premarche", "rang1", "premiers_perps", "perps_rang1"];
   const entetes = ["lancements", "dont perp", "pré-marché", "rang 1", "1ers perps", "perps rang 1"];
   console.log(`\njour        ${entetes.map((e) => e.padStart(13)).join("")}`);
   const totaux = colonnes.map(() => 0);
   for (const l of parJour) {
-    console.log(`${l.jour}  ${colonnes.map((c) => l[c].padStart(13)).join("")}`);
+    console.log(`${l.jour}  ${colonnes.map((c) => String(l[c]).padStart(13)).join("")}`);
     colonnes.forEach((c, i) => (totaux[i] += Number(l[c])));
   }
   console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(13)).join("")}`);
