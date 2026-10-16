@@ -632,6 +632,8 @@ const EVENEMENTS = `
   WHERE le >= toStartOfDay(now()) - INTERVAL {jours:UInt32} DAY
     AND le <  toStartOfDay(now())`;
 
+// Ordre du rapport : les événements d'abord, puis le tableau par jour, puis la
+// couverture, réduite à une ligne quand toutes les sources ont répondu.
 export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = true): Promise<void> {
   const rang1 = (marche: Marche) =>
     SOURCES.filter((s) => s.rang === 1 && s.marche === marche)
@@ -640,25 +642,47 @@ export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = 
   const perpRang1 = `hasAny(bourses_perp, [${rang1("perp")}])`;
   const estRang1 = `(hasAny(bourses_spot, [${rang1("spot")}]) OR ${perpRang1})`;
 
-  const couverture = await (
-    await ch.query({
-      query: `
-        SELECT bourse, marche,
-               toString(min(releve_le)) AS depuis,
-               countIf(erreur = '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS ok,
-               countIf(erreur != '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS echecs
-        FROM cex_releves GROUP BY bourse, marche ORDER BY bourse, marche`,
-      query_params: { jours },
-      format: "JSONEachRow",
-    })
-  ).json<{ bourse: string; marche: string; depuis: string; ok: string; echecs: string }>();
+  if (avecDetail) {
+    const detail = await (
+      await ch.query({
+        query: `SELECT evenement, base, toString(le) AS le, par_perp, premarche, bourses_spot, bourses_perp,
+                       ${estRang1} AS rang1
+                FROM (${EVENEMENTS})
+                ORDER BY rang1 DESC, le DESC`,
+        query_params: { jours },
+        format: "JSONEachRow",
+      })
+    ).json<{
+      evenement: string;
+      base: string;
+      le: string;
+      par_perp: number;
+      premarche: number;
+      bourses_spot: string[];
+      bourses_perp: string[];
+      rang1: number;
+    }>();
 
-  console.log(`Couverture du relevé (${jours} derniers jours) :`);
-  for (const c of couverture) {
-    console.log(
-      `  ${`${c.bourse} ${c.marche}`.padEnd(14)} depuis ${c.depuis}, ` +
-        `${c.ok} relevés réussis, ${c.echecs} échecs`,
-    );
+    const majeurs = detail.filter((d) => Number(d.rang1) === 1);
+    console.log(`Événements touchant au moins une bourse de rang 1 :`);
+    if (majeurs.length === 0) console.log(`  aucun`);
+    for (const d of majeurs) {
+      const quoi =
+        d.evenement === "lancement"
+          ? `lancement${Number(d.par_perp) ? " par perp" : ""}${Number(d.premarche) ? " (pré-marché)" : ""}`
+          : `premier perp${Number(d.premarche) ? " (pré-marché)" : ""}`;
+      console.log(
+        `  ${d.le.slice(0, 16)}  ${d.base.padEnd(12)} ${quoi.padEnd(32)} ` +
+          `spot : ${d.bourses_spot.join(", ") || "—"} | perp : ${d.bourses_perp.join(", ") || "—"}`,
+      );
+    }
+    const mineurs = detail.length - majeurs.length;
+    if (mineurs > 0) {
+      const noms = detail.filter((d) => Number(d.rang1) !== 1).map((d) => d.base);
+      console.log(`
+Sur les bourses de rang 2 seulement (${mineurs}) : ${noms.join(", ")}`);
+    }
+    console.log("");
   }
 
   const parJour = await (
@@ -680,7 +704,7 @@ export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = 
 
   const colonnes = ["lancements", "par_perp", "premarche", "rang1", "premiers_perps", "perps_rang1"];
   const entetes = ["lancements", "dont perp", "pré-marché", "rang 1", "1ers perps", "perps rang 1"];
-  console.log(`\njour        ${entetes.map((e) => e.padStart(13)).join("")}`);
+  console.log(`jour        ${entetes.map((e) => e.padStart(13)).join("")}`);
   const totaux = colonnes.map(() => 0);
   for (const l of parJour) {
     console.log(`${l.jour}  ${colonnes.map((c) => String(l[c]).padStart(13)).join("")}`);
@@ -688,37 +712,35 @@ export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = 
   }
   console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(13)).join("")}`);
 
-  if (!avecDetail) return;
-
-  const detail = await (
+  const couverture = await (
     await ch.query({
-      query: `SELECT evenement, base, toString(le) AS le, par_perp, premarche, bourses_spot, bourses_perp
-              FROM (${EVENEMENTS})
-              WHERE ${estRang1} ORDER BY le DESC`,
+      query: `
+        SELECT bourse, marche,
+               toString(min(releve_le)) AS depuis,
+               countIf(erreur = '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS ok,
+               countIf(erreur != '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS echecs
+        FROM cex_releves GROUP BY bourse, marche ORDER BY bourse, marche`,
       query_params: { jours },
       format: "JSONEachRow",
     })
-  ).json<{
-    evenement: string;
-    base: string;
-    le: string;
-    par_perp: number;
-    premarche: number;
-    bourses_spot: string[];
-    bourses_perp: string[];
-  }>();
+  ).json<{ bourse: string; marche: string; depuis: string; ok: string | number; echecs: string | number }>();
 
-  console.log(`\nÉvénements touchant au moins une bourse de rang 1 :`);
-  for (const d of detail) {
-    const quoi =
-      d.evenement === "lancement"
-        ? `lancement${d.par_perp ? " par perp" : ""}${d.premarche ? " (pré-marché)" : ""}`
-        : `premier perp${d.premarche ? " (pré-marché)" : ""}`;
-    console.log(
-      `  ${d.le}  ${d.base.padEnd(12)} ${quoi.padEnd(32)} ` +
-        `spot : ${d.bourses_spot.join(", ") || "—"} | perp : ${d.bourses_perp.join(", ") || "—"}`,
-    );
+  const vues = new Set(couverture.map((c) => `${c.bourse} ${c.marche}`));
+  const absentes = SOURCES.map(nomSource).filter((n) => !vues.has(n));
+  const enEchec = couverture.filter((c) => Number(c.echecs) > 0 || Number(c.ok) === 0);
+  const reussis = couverture.reduce((t, c) => t + Number(c.ok), 0);
+  const depuis = couverture.map((c) => c.depuis).sort()[0] ?? "—";
+
+  console.log(
+    `
+Couverture (${jours} j) : ${SOURCES.length - absentes.length - enEchec.length} sources sur ` +
+      `${SOURCES.length} sans échec, ${reussis} relevés réussis, relevé depuis ${depuis}`,
+  );
+  // Le format « N échecs » est celui que recap-listings.sh cherche pour l'alerte
+  for (const c of enEchec) {
+    console.log(`  ${c.bourse} ${c.marche} : ${c.echecs} échecs, ${c.ok} relevés réussis`);
   }
+  for (const n of absentes) console.log(`  ${n} : jamais relevée`);
 }
 
 async function main(): Promise<void> {

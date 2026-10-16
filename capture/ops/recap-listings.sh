@@ -44,7 +44,7 @@ QUINZE=$(node dist/listings.js --rapport 15 --sans-detail 2>&1) || echec "rappor
 
 JOUR=$(date -u -d yesterday +%d/%m/%Y)
 SUJET="Listings du $JOUR"
-if grep -qE ' [1-9][0-9]* échecs' <<<"$VEILLE"; then
+if grep -qE ' [1-9][0-9]* échecs|jamais relevée' <<<"$VEILLE"; then
   SUJET="[ALERTE] $SUJET : relevé incomplet"
 fi
 
