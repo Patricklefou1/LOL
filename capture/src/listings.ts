@@ -1,6 +1,7 @@
 import { createClient, ClickHouseClient } from "@clickhouse/client";
 import { config } from "./config";
 import { essaiCoingecko, rapportCoingecko, releverCoingecko } from "./coingecko";
+import { rapportSuivi, releverSuivi } from "./suivi";
 import { sleep } from "./util";
 
 // Relevé des cotations spot et perps sur Binance, Coinbase, OKX, Bybit, Hyperliquid,
@@ -10,6 +11,7 @@ import { sleep } from "./util";
 //   npm run listings -- --essai       -- lit les seize sources, n'écrit rien
 //   npm run listings -- --rapport 15  -- événements par jour sur 15 jours
 //   npm run listings -- --rapport 15 --sans-detail  -- le tableau seul, sans la liste
+//   npm run listings -- --suivi       -- rendement des lancements à J+1, J+7, J+30
 //
 // Le rapport ne signale que deux événements :
 //   - lancement : un ticker jamais coté nulle part, ni en spot ni en perp. S'il
@@ -596,7 +598,9 @@ async function essai(): Promise<void> {
 // réputée ancienne (epoch 0) : elle peut masquer un vrai lancement des premiers
 // jours, mais jamais en inventer un. Une paire jamais ouverte n'a pas de date.
 // Les deux événements sont ensuite calculés par ticker, spot et perp séparés.
-const EVENEMENTS = `
+// `fin` borne la fenêtre : minuit pour les rapports par jour entier, plus tard
+// pour le suivi, qui inclut les lancements du jour.
+export const evenementsSql = (fin: string) => `
   WITH
     paires AS (
       SELECT bourse, marche, base, premarche,
@@ -631,7 +635,8 @@ const EVENEMENTS = `
     )
   SELECT * FROM evenements
   WHERE le >= toStartOfDay(now()) - INTERVAL {jours:UInt32} DAY
-    AND le <  toStartOfDay(now())`;
+    AND le <  ${fin}`;
+const EVENEMENTS = evenementsSql("toStartOfDay(now())");
 
 // Ordre du rapport : les événements d'abord, puis le tableau par jour, puis la
 // couverture, réduite à une ligne quand toutes les sources ont répondu.
@@ -756,7 +761,9 @@ async function main(): Promise<void> {
   });
 
   const iRapport = args.indexOf("--rapport");
-  if (iRapport !== -1) {
+  if (args.includes("--suivi")) {
+    await rapportSuivi(ch);
+  } else if (iRapport !== -1) {
     const jours = Number(args[iRapport + 1] ?? 15) || 15;
     await rapport(ch, jours, !args.includes("--sans-detail"));
     await rapportCoingecko(ch, jours, !args.includes("--sans-detail"));
@@ -765,6 +772,8 @@ async function main(): Promise<void> {
     const maintenant = Date.now();
     for (const source of SOURCES) await releverSource(ch, source, maintenant);
     await releverCoingecko(ch, maintenant);
+    // Après les sources : un lancement détecté à ce relevé est suivi dès maintenant
+    await releverSuivi(ch, maintenant);
   }
   await ch.close();
 }

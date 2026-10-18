@@ -379,6 +379,23 @@ Clé « Demo » gratuite dans `.env` : `COINGECKO_API_KEY`. Sans clé, la source
 ignorée sans gêner le reste du relevé. Le relevé horaire consomme environ
 50 appels par jour sur les 10 000 par mois de l'offre.
 
+#### Suivi des lancements — ce qu'ils deviennent à J+1, J+7, J+30
+
+Chaque relevé lit aussi les tickers groupés des huit bourses (un appel par bourse
+et par marché, quel que soit le nombre de tokens) et garde, pour chaque token
+lancé depuis moins de 35 jours, son prix, son taux de financement, son intérêt
+ouvert et son volume, dans `suivi_lancements`. `npm run listings -- --suivi`
+donne le rendement médian des lancements de rang 1 à J+1, J+7 et J+30 et la part
+en baisse, puis la ligne de chaque token ; le récap du matin l'inclut.
+
+- **Le prix est la médiane de toutes les bourses** au même relevé, en paires
+  dollar seulement.
+- **« Départ manqué »** : premier relevé plus de 6 h après le lancement. Le
+  rendement part alors du premier prix connu, et le token est exclu des médianes.
+- **Le financement est une moyenne entre bourses** dont les périodes diffèrent
+  (8 h, 4 h, 1 h pour Hyperliquid) : un indicateur de sens, pas un coût exact.
+  OKX ne publie le sien qu'instrument par instrument et n'y figure pas.
+
 ### `npm run profiles` — devs, wallets, clusters
 
 Reconstruit intégralement trois tables dérivées (ce sont des agrégats de toute

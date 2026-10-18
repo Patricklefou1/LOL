@@ -41,6 +41,7 @@ command -v msmtp >/dev/null || echec "msmtp absent : sudo apt install msmtp"
 cd "$CAPTURE_DIR"
 VEILLE=$(node dist/listings.js --rapport 1 2>&1) || echec "rapport de la veille : $VEILLE"
 QUINZE=$(node dist/listings.js --rapport 15 --sans-detail 2>&1) || echec "rapport 15 jours : $QUINZE"
+SUIVI=$(node dist/listings.js --suivi 2>&1) || echec "suivi : $SUIVI"
 
 JOUR=$(date -u -d yesterday +%d/%m/%Y)
 SUJET="Listings du $JOUR"
@@ -60,6 +61,7 @@ fi
   printf 'Content-Transfer-Encoding: 8bit\n\n'
   printf '=== Veille ===\n\n%s\n\n' "$VEILLE"
   printf '=== 15 derniers jours ===\n\n%s\n' "$QUINZE"
+  printf '\n=== Suivi des lancements ===\n%s\n' "$SUIVI"
 } | SMTP_PASSWORD="$SMTP_PASSWORD" msmtp \
       --host="$SMTP_HOST" --port="$SMTP_PORT" --tls=on --auth=on \
       --user="$SMTP_USER" --from="$SMTP_USER" \
