@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
+from collections import Counter
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -229,3 +230,97 @@ def test_temps():
     assert A.parse_time_ms(T0 // 1000) == (T0, False)
     assert A.parse_time_ms(str(T0)) == (T0, False)
     assert A.parse_time_ms("2026-01-01 00:00:00") == (T0, True)
+
+
+# --------------------------------------------------------------------------- collecteur et observations
+
+import collecteur as C  # noqa: E402
+
+BOARD_NOW = T0 + 10 * A.DAY_MS + 7 * A.HOUR_MS  # cloture de la bougie 1 h de 07:00
+
+
+class BoardHandler(Handler):
+    def do_GET(self):
+        u = urlparse(self.path)
+        if u.path != "/public/setups":
+            return super().do_GET()
+        if self.headers.get("X-API-Key") != TOKEN:
+            return self._json({"error": "unauthorized"}, 401)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        computed = BOARD_NOW - 1  # derniere milliseconde de la bougie
+        rows = [
+            {"symbol": "BTCUSDT", "tf": q["timeframe"], "computedAt": computed, "direction": "long",
+             "score": 71, "price": 101.5, "archetype": {"type": "pattern_breakout", "barsSinceTrigger": 0}},
+            {"symbol": "ETHUSDT", "tf": q["timeframe"], "computedAt": computed, "direction": "short",
+             "score": 55, "price": 200.0, "archetype": {"type": "trendline_break", "barsSinceTrigger": 3}},
+        ]
+        body = json.dumps({"truncated": False, "data": rows}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("X-Credits-Remaining", "1995")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture(scope="module")
+def board():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), BoardHandler)
+    th = threading.Thread(target=srv.serve_forever, daemon=True)
+    th.start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def test_collecteur_premiere_vue_et_declenchement(board, tmp_path, monkeypatch):
+    monkeypatch.setenv("COINBEACON_TOKEN", TOKEN)
+    argv = ["--api-url", f"{board}/public/setups", "--dossier", str(tmp_path), "--timeframes", "1h"]
+    assert C.main(argv) == 0
+    assert C.main(argv) == 0  # second appel : rien de nouveau
+    obs = [json.loads(x) for x in open(tmp_path / "observations.jsonl")]
+    assert len(obs) == 2
+    btc = next(o for o in obs if o["symbole"] == "BTCUSDT")
+    eth = next(o for o in obs if o["symbole"] == "ETHUSDT")
+    assert btc["declenchement_cloture_ms"] == BOARD_NOW - 1
+    assert eth["declenchement_cloture_ms"] == BOARD_NOW - 1 - 3 * A.HOUR_MS
+    assert len(open(tmp_path / "vues.jsonl").readlines()) == 4
+    calls = [json.loads(x) for x in open(tmp_path / "appels.jsonl")]
+    assert [c["nouveaux"] for c in calls] == [2, 0] and calls[0]["credits"] == "1995"
+    for p in tmp_path.rglob("*"):
+        if p.is_file():
+            data = gzip.decompress(p.read_bytes()) if p.suffix == ".gz" else p.read_bytes()
+            assert TOKEN.encode() not in data, p
+
+
+def test_collecteur_jeton_refuse(board, tmp_path, monkeypatch):
+    monkeypatch.setenv("COINBEACON_TOKEN", "mauvais")
+    with pytest.raises(A.Stop) as e:
+        C.main(["--api-url", f"{board}/public/setups", "--dossier", str(tmp_path), "--timeframes", "1h"])
+    assert e.value.code == 3 and "401" in str(e.value)
+
+
+def test_analyse_depuis_observations(server, tmp_path, monkeypatch):
+    obs = []
+    for k in range(40):
+        seen = T0 + 9 * A.DAY_MS + k * 6 * A.HOUR_MS + 90_000
+        trig = seen - 90_000 - 1
+        obs.append({"cle": f"k{k}", "premiere_vue_ms": seen, "symbole": ["BTCUSDT", "ETHUSDT"][k % 2], "tf": "1h",
+                    "archetype": "pattern_breakout", "bars_a_la_premiere_vue": 0 if k % 10 else 4,
+                    "declenchement_cloture_ms": trig, "computedAt_premiere_vue": trig,
+                    "ligne": {"symbol": "X", "direction": "long" if k % 3 else "short", "score": 60}})
+    path = tmp_path / "donnees" / "observations.jsonl"
+    path.parent.mkdir()
+    path.write_text("\n".join(json.dumps(o) for o in obs))
+    (path.parent / "appels.jsonl").write_text(json.dumps({"t": T0, "tf": "1h", "http": 200, "tronque": True}))
+    monkeypatch.delenv("COINBEACON_TOKEN", raising=False)
+    assert A.main(["--observations", str(path), "--binance-base", server, "--cache-dir", str(tmp_path / "c"),
+                   "--out-dir", str(tmp_path / "out"), "--bootstrap", "300"]) == 0
+    rows = list(csv.DictReader(open(tmp_path / "out" / "detections.csv", encoding="utf-8")))
+    st = Counter(r["statut"] for r in rows)
+    assert st["inclus"] == 36
+    assert sum(v for k, v in st.items() if "biais de survie" in k) == 4
+    r = next(r for r in rows if r["id"] == "k1")
+    assert r["heure_entree_utc"] == A.iso((obs[1]["premiere_vue_ms"] // A.MIN_MS + 1) * A.MIN_MS)
+    assert r["type"] == "pattern_breakout 1h" and r["sens"] == "achat"
+    rapport = (tmp_path / "out" / "rapport.md").read_text(encoding="utf-8")
+    assert "collecte locale" in rapport and "tronquees" in rapport
+    assert not (tmp_path / "out" / "instantanes").exists() or not list((tmp_path / "out" / "instantanes").iterdir())

@@ -789,7 +789,72 @@ def parse_args(argv=None):
     p.add_argument("--refresh-api", action="store_true", help="ignorer le cache des pages de l'API")
     p.add_argument("--offline", action="store_true", help="tout lire depuis le cache, sans reseau")
     p.add_argument("--check-only", action="store_true", help="faire les trois controles puis s'arreter")
+    p.add_argument("--observations", type=Path,
+                   help="lire les setups collectes par collecteur.py (observations.jsonl) au lieu de l'API")
+    p.add_argument("--heure-detection", choices=["premiere_vue", "declenchement"], default="premiere_vue",
+                   help="premiere_vue : moment ou le collecteur a vu le setup (realiste) ; declenchement : "
+                        "cloture de la bougie de declenchement (theorique, un peu optimiste)")
+    p.add_argument("--bars-max", type=int, default=1,
+                   help="ecarter les setups vus pour la premiere fois plus de N bougies apres leur "
+                        "declenchement : ils ont survecu jusque-la, les garder recree le biais de survie")
     return p.parse_args(argv)
+
+
+def load_observations(args):
+    """Setups enregistres par collecteur.py, a leur premiere apparition."""
+    path = args.observations
+    rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+    records, biases = [], []
+    late = no_trigger = 0
+    for o in rows:
+        rec = dict(o.get("ligne") or {})
+        rec.update({"_cle": o["cle"], "_symbole": o["symbole"],
+                    "_archetype": f"{o.get('archetype')} {o.get('tf')}"})
+        bars = o.get("bars_a_la_premiere_vue")
+        if args.heure_detection == "premiere_vue":
+            rec["_detection_ms"] = o["premiere_vue_ms"]
+        elif o.get("declenchement_cloture_ms") is not None:
+            rec["_detection_ms"] = o["declenchement_cloture_ms"]
+        else:
+            rec["_detection_ms"] = None
+            rec["_motif"] = "exclu : pas de bougie de declenchement (archetype sans declencheur)"
+        if bars is None:
+            no_trigger += 1
+        elif bars > args.bars_max and "_motif" not in rec:
+            late += 1
+            rec["_motif"] = f"exclu : vu pour la premiere fois {bars} bougies apres le declenchement (biais de survie)"
+        records.append(rec)
+    if late:
+        biases.append(f"{late} setups vus pour la premiere fois plus de {args.bars_max} bougie(s) apres leur "
+                      "declenchement sont ecartes : ils avaient deja survecu, les garder favoriserait ceux qui ont "
+                      "marche. C'est le cas de tout le tableau present au premier appel et apres chaque coupure.")
+    if no_trigger:
+        biases.append(f"{no_trigger} setups sans bougie de declenchement (barsSinceTrigger nul).")
+    if args.heure_detection == "declenchement":
+        biases.append("Heure de detection = cloture de la bougie de declenchement : le collecteur ne voit le setup "
+                      "qu'environ 90 s plus tard, donc l'entree mesuree est un peu plus tot que realisable.")
+    calls_path = path.parent / "appels.jsonl"
+    if calls_path.exists():
+        calls = [json.loads(line) for line in open(calls_path, encoding="utf-8") if line.strip()]
+        ok = [c for c in calls if c.get("http") == 200]
+        errs = len(calls) - len(ok)
+        trunc = sum(1 for c in ok if c.get("tronque"))
+        biases.append(f"Collecte : {len(calls)} appels, {errs} en erreur, {trunc} reponses tronquees par l'API "
+                      "(plus de 800 candidats : des setups ont pu echapper a la collecte).")
+        by_tf = defaultdict(list)
+        for c in ok:
+            by_tf[c["tf"]].append(c["t"])
+        for tf, ts in sorted(by_tf.items()):
+            ts.sort()
+            step = int(tf[:-1]) * {"m": MIN_MS, "h": HOUR_MS, "d": DAY_MS, "w": 7 * DAY_MS}[tf[-1]]
+            holes = [(a, b) for a, b in zip(ts, ts[1:]) if b - a > 1.5 * step]
+            if holes:
+                missed = sum(round((b - a) / step) - 1 for a, b in holes)
+                biases.append(f"Trous de collecte en {tf} : {len(holes)} coupures, environ {missed} clotures "
+                              f"manquees (la plus longue commence le {iso(max(holes, key=lambda x: x[1]-x[0])[0])}).")
+    pmeta = {"pages": 0, "methode": f"collecte locale ({path.name})", "total_annonce": None,
+             "tronque": False, "boucle": False}
+    return records, pmeta, biases
 
 
 def preflight(args, token, api: SetupsApi, binance: Binance):
@@ -834,9 +899,17 @@ def main(argv=None):
     notes = []
 
     log("Controles prealables")
-    if args.offline:
+    if args.observations and not args.offline:
+        code = binance.ping()
+        if code != 200:
+            raise Stop(f"ECHEC controle Binance : {binance.base} repond HTTP {code}", 4)
+        checks = [f"source : setups collectes ({args.observations}), API CoinBeacon non interrogee",
+                  f"{binance.base} : HTTP {code}"]
+        for c in checks:
+            log("  OK", c)
+    elif args.offline:
         checks = ["mode hors ligne : controles reseau sautes, tout est lu dans le cache"]
-        if not args.api_url:
+        if not args.api_url and not args.observations:
             raise Stop("--api-url requis meme hors ligne (cle du cache)", 3)
     else:
         checks = preflight(args, token, api, binance)
@@ -844,8 +917,14 @@ def main(argv=None):
         return 0
 
     # ---- 1. detections
-    log("Recuperation de l'historique des setups")
-    records, pmeta = api.fetch_all()
+    obs_biases = []
+    if args.observations:
+        log(f"Lecture des setups collectes : {args.observations}")
+        records, pmeta, obs_biases = load_observations(args)
+        overrides = {"id": "_cle", "time": "_detection_ms", "pair": "_symbole", "type": "_archetype", **overrides}
+    else:
+        log("Recuperation de l'historique des setups")
+        records, pmeta = api.fetch_all()
     if not records:
         raise Stop("l'API n'a renvoye aucune detection", 3)
     flat = [flatten(r) for r in records]
@@ -887,12 +966,14 @@ def main(argv=None):
             "_api_price": to_float(r.get(mapping["price"])) if "price" in mapping else None,
             "_api_exit": {h: to_float(r.get(mapping[f"exit_{h}h"])) if f"exit_{h}h" in mapping else None for h in HORIZONS},
             "_status": r.get(mapping["status"]) if "status" in mapping else None,
-            "statut": "",
+            "statut": r.get("_motif", ""),
         })
 
     # ---- 2. entonnoir d'exclusion avant prix
     missing_pairs = Counter()
     for d in dets:
+        if d["statut"]:
+            continue
         if d["_det_ms"] is None:
             d["statut"] = "exclu : heure illisible"
         elif not d["paire_binance"]:
@@ -1042,22 +1123,24 @@ def main(argv=None):
             biases.append(f"Identifiants numériques : {missing_ids} absents sur {span_ids} "
                           f"({missing_ids / span_ids * 100:.1f} %) entre {min(num_ids)} et {max(num_ids)}. "
                           "Setups supprimés de l'API ou numérotation partagée : à vérifier.")
-    snap_dir = args.out_dir / "instantanes"
-    snap_dir.mkdir(parents=True, exist_ok=True)
-    previous = sorted(snap_dir.glob("ids_*.json"))
-    current_ids = {d["id"]: d["heure_detection_utc"] for d in dets}
-    disappeared = []
-    if previous:
-        old = json.loads(previous[-1].read_text())
-        disappeared = [i for i, t in old.items() if i not in current_ids and t and t <= iso(last)]
-        if disappeared:
-            biases.append(f"{len(disappeared)} détections présentes dans l'instantané {previous[-1].name} "
-                          "ont disparu de l'API : biais de survie probable.")
-    else:
-        biases.append("Premier instantané des identifiants : impossible de savoir si des setups ont déjà été retirés. "
-                      "Relancer le script plus tard permettra de le détecter.")
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M")
-    (snap_dir / f"ids_{stamp}.json").write_text(json.dumps(current_ids, indent=0, sort_keys=True))
+    biases.extend(obs_biases)
+    if not args.observations:  # la collecte enregistre deja chaque setup a sa premiere apparition
+        snap_dir = args.out_dir / "instantanes"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        previous = sorted(snap_dir.glob("ids_*.json"))
+        current_ids = {d["id"]: d["heure_detection_utc"] for d in dets}
+        disappeared = []
+        if previous:
+            old = json.loads(previous[-1].read_text())
+            disappeared = [i for i, t in old.items() if i not in current_ids and t and t <= iso(last)]
+            if disappeared:
+                biases.append(f"{len(disappeared)} détections présentes dans l'instantané {previous[-1].name} "
+                              "ont disparu de l'API : biais de survie probable.")
+        else:
+            biases.append("Premier instantané des identifiants : impossible de savoir si des setups ont déjà été retirés. "
+                          "Relancer le script plus tard permettra de le détecter.")
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M")
+        (snap_dir / f"ids_{stamp}.json").write_text(json.dumps(current_ids, indent=0, sort_keys=True))
     if naive_tz:
         biases.append(f"{naive_tz} heures de détection sans fuseau : supposées en UTC.")
     if tz_probe:
@@ -1173,7 +1256,7 @@ def write_csv(path, dets, args):
 def build_report(args, checks, pmeta, records, fill, mapping, dets, included, missing_pairs, first, last, period_days,
                  price_source, api_check, dup_info, results, biases, notes, excl_top, regime, n_timed, inc_times):
     L = []
-    host = urlparse(args.api_url).netloc
+    host = urlparse(args.api_url or "").netloc
     L.append("# Rentabilité des détections CoinBeacon à 4 h et 24 h\n")
     L.append(f"Généré le {dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M} UTC par `coinbeacon/analyse_setups.py`. "
              f"Coût aller-retour {args.cost * 100:.2f} %, graine {args.seed}, {args.bootstrap} rééchantillonnages, "
@@ -1182,7 +1265,9 @@ def build_report(args, checks, pmeta, records, fill, mapping, dets, included, mi
     L.append("Contrôles préalables :\n")
     L.extend(f"- {c}" for c in checks)
     L.append("")
-    L.append(f"- Source : `{host}`, {pmeta['pages']} pages, pagination : {pmeta['methode']}"
+    L.append((f"- Source : {pmeta['methode']}, heure de détection = {args.heure_detection}, "
+              f"setups vus plus de {args.bars_max} bougie(s) après déclenchement écartés" if args.observations else
+              f"- Source : `{host}`, {pmeta['pages']} pages, pagination : {pmeta['methode']}")
              + (f", total annoncé par l'API : {pmeta['total_annonce']}" if pmeta["total_annonce"] is not None else "") + ".")
     L.append(f"- Période couverte : **{iso(first)} → {iso(last)} UTC**, soit {period_days:.1f} jours.")
     L.append(f"- Détections récupérées : **{len(records)}** ; analysées : **{len(included)}**.")
