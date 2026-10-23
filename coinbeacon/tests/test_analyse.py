@@ -324,3 +324,35 @@ def test_analyse_depuis_observations(server, tmp_path, monkeypatch):
     rapport = (tmp_path / "out" / "rapport.md").read_text(encoding="utf-8")
     assert "collecte locale" in rapport and "tronquees" in rapport
     assert not (tmp_path / "out" / "instantanes").exists() or not list((tmp_path / "out" / "instantanes").iterdir())
+
+
+def test_dry_vers_observations_puis_analyse(server, tmp_path, monkeypatch):
+    import dry_vers_observations as D
+    dry = []
+    for k in range(36):
+        t0 = T0 + 9 * A.DAY_MS + k * 5 * A.HOUR_MS - 1
+        sym = ["BTCUSDT", "ETHUSDT", "SOLUSDT"][k % 3]
+        dry.append({"id": f"d{k}", "groupe": "principal" if k % 4 else "temoin", "cle": f"{sym}|1h|long", "tf": "1h",
+                    "symbol": sym, "type": "level_bounce" if k % 2 else "breakout_retest",
+                    "sens": "long" if k % 3 else "short", "t0": t0, "trig": None if k % 2 else t0 - 2 * A.HOUR_MS,
+                    "score0": 82.0, "inscrit_ms": t0 + 4 * A.MIN_MS, "origine": "apparu sur le tableau"})
+    dry.append({**dry[1], "id": "dup", "symbol": "ETHUSDC", "score0": 70.0})       # meme actif, autre devise
+    dry.append({**dry[1], "id": "stable", "symbol": "USDCUSDT"})                     # actif de base stable
+    src = tmp_path / "dry.json"
+    src.write_text(json.dumps({"dry": dry}))
+    out = tmp_path / "obs" / "observations.jsonl"
+    assert D.main([str(src), "--groupe", "principal", "--sortie", str(out)]) == 0
+    obs = [json.loads(x) for x in open(out)]
+    ids = {o["cle"] for o in obs}
+    assert "dup" not in ids and "stable" not in ids and len(obs) == 27
+    o0 = next(o for o in obs if o["cle"] == "d2")
+    assert o0["premiere_vue_ms"] == dry[2]["t0"] + 4 * A.MIN_MS
+    assert o0["bars_a_la_premiere_vue"] == 2 and o0["declenchement_cloture_ms"] == dry[2]["t0"] - 2 * A.HOUR_MS
+    monkeypatch.delenv("COINBEACON_TOKEN", raising=False)
+    assert A.main(["--observations", str(out), "--binance-base", server, "--cache-dir", str(tmp_path / "c"),
+                   "--out-dir", str(tmp_path / "res"), "--bootstrap", "300"]) == 0
+    rows = list(csv.DictReader(open(tmp_path / "res" / "detections.csv", encoding="utf-8")))
+    st = Counter(r["statut"] for r in rows)
+    # les breakout_retest vus 2 bougies apres declenchement sont ecartes (biais de survie)
+    assert sum(v for k, v in st.items() if "biais de survie" in k) == sum(o["bars_a_la_premiere_vue"] == 2 for o in obs)
+    assert st["inclus"] > 0
