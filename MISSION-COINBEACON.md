@@ -3,6 +3,8 @@
 > Ce fichier est la mission de la session Claude Code qui tourne sur le VPS OVH.
 > Utilisateur : prépare le terminal comme indiqué ci-dessous, puis tape dans Claude « Lis MISSION-COINBEACON.md et exécute la mission étape par étape. »
 
+> **Mise à jour du 23/10 : ne pas lancer `collecteur.py`.** Une collecte équivalente tourne déjà par cron depuis le 11/10 sur le VPS, avec `coinbeacon/suivi_dry.py collecte`, en 1 h, 4 h et 1 j. Lancer `collecteur.py` en plus doublerait les crédits pour rien. La phase 1 ci-dessous est remplacée par le contrôle de cette collecte existante, et la phase 2 devra lire ses données.
+
 ## Ce qui a changé
 
 CoinBeacon l'a confirmé : l'API n'a **aucun historique**. `GET https://api.coinbeacon.io/public/setups` renvoie le tableau du moment, 150 lignes au plus, sans pagination. Un setup qui échoue disparaît sans laisser de trace. Il faut donc **collecter** le tableau à chaque clôture de bougie pendant plusieurs semaines, puis analyser ce qui a été collecté.
