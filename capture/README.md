@@ -365,6 +365,22 @@ npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur 
   est refusé et journalisé dans `cex_releves`. Le rapport affiche les relevés
   réussis et échoués par source.
 
+#### Actions et ETF exclus
+
+Binance spot, MEXC spot et Hyperliquid cotent des actions tokenisées sans les
+catégoriser. Le rapport et le suivi les écartent par trois règles : la table
+`cex_exclus` (alimentée par la migration 010 et à compléter à la main), les noms
+CoinGecko contenant « Tokenized », « bStocks » ou « xStock », et le préfixe EQ
+suivi d'au moins trois lettres. Pour exclure un ticker qui passe encore :
+
+```bash
+clickhouse-client --password -q "INSERT INTO pumpfun.cex_exclus (base, raison) VALUES ('XYZ', 'action')"
+```
+
+Une source n'alerte le mail que si elle est **en panne** : muette depuis trois
+heures, ou en échec plus d'une fois sur deux. Un échec ponctuel ne fait que
+dater une cotation une heure plus tard ; il est signalé comme intermittent.
+
 #### Source CoinGecko — les lancements sur DEX
 
 Les bourses centralisées ne voient pas un token lancé sur PancakeSwap ou Raydium.

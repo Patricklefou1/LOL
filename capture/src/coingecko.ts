@@ -185,8 +185,15 @@ export async function rapportCoingecko(ch: ClickHouseClient, jours: number, avec
         WITH
           m AS (SELECT id, argMax(mcap, releve_le) AS mcap, argMax(volume, releve_le) AS volume
                 FROM cg_marches GROUP BY id),
+          -- Seules les cotations récentes comptent : une paire ancienne qui porte
+          -- le même ticker est un autre token (« BTC » Big Titty Coin n'est pas
+          -- coté sur Binance). La référence sans date est réputée ancienne.
           c AS (SELECT base, arraySort(groupUniqArray(bourse)) AS bourses
-                FROM cex_paires FINAL WHERE ouvert_le IS NOT NULL GROUP BY base)
+                FROM cex_paires FINAL
+                WHERE ouvert_le IS NOT NULL
+                  AND NOT (initiale = 1 AND date_bourse IS NULL)
+                  AND coalesce(date_bourse, ouvert_le) >= now() - INTERVAL 60 DAY
+                GROUP BY base)
         SELECT t.id AS id, t.symbole AS symbole, t.nom AS nom, t.contrats AS contrats,
                toString(t.vu_le) AS vu_le, m.mcap AS mcap, m.volume AS volume, c.bourses AS bourses
         FROM (SELECT * FROM cg_tokens FINAL

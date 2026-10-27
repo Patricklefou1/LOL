@@ -216,13 +216,14 @@ function chDate(msEpoch: number): string {
   return new Date(msEpoch).toISOString().slice(0, 19).replace("T", " ");
 }
 
-// Tickers des tokens lancés depuis moins de 35 jours, selon le même calcul
-// d'événements que le rapport
+// Tickers des tokens lancés ou passés en perp depuis moins de 35 jours, selon le
+// même calcul d'événements que le rapport. Le premier perp compte : DNA, coté en
+// spot sur Gate quelques heures avant ses perps, n'aurait sinon jamais été suivi.
 async function tokensSuivis(ch: ClickHouseClient): Promise<{ base: string; le: string }[]> {
   return (
     await ch.query({
       query: `SELECT base, toString(min(le)) AS le FROM (${evenementsSql("now() + INTERVAL 1 DAY")})
-              WHERE evenement = 'lancement' GROUP BY base`,
+              GROUP BY base`,
       query_params: { jours: DUREE_JOURS },
       format: "JSONEachRow",
     })
@@ -300,15 +301,16 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
 
   const evenements = await (
     await ch.query({
-      query: `SELECT base, toString(le) AS le,
-                     (hasAny(bourses_spot, [${rang1("spot")}]) OR hasAny(bourses_perp, [${rang1("perp")}])) AS rang1
+      // Un ticker, un départ : le plus ancien de ses événements
+      query: `SELECT base, toString(min(le)) AS depart, argMin(evenement, le) AS premier,
+                     max(hasAny(bourses_spot, [${rang1("spot")}]) OR hasAny(bourses_perp, [${rang1("perp")}])) AS rang1
               FROM (${evenementsSql("now() + INTERVAL 1 DAY")})
-              WHERE evenement = 'lancement'
-              ORDER BY le DESC`,
+              GROUP BY base
+              ORDER BY depart DESC`,
       query_params: { jours: DUREE_JOURS },
       format: "JSONEachRow",
     })
-  ).json<{ base: string; le: string; rang1: number }>();
+  ).json<{ base: string; depart: string; premier: string; rang1: number }>();
   if (evenements.length === 0) return;
 
   const releves = await (
@@ -336,7 +338,7 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
   for (const e of evenements) {
     const serie = parBase.get(e.base);
     if (!serie?.length) continue;
-    const t0 = Date.parse(e.le.replace(" ", "T") + "Z");
+    const t0 = Date.parse(e.depart.replace(" ", "T") + "Z");
     const p0 = serie[0];
     // Un premier relevé plus de 6 h après le lancement manque le départ :
     // le rendement part du premier prix connu, pas du prix de lancement
@@ -352,7 +354,7 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
     const dernier = serie[serie.length - 1];
     if (Number(e.rang1) === 1) {
       lignes.push(
-        `  ${e.base.padEnd(10)} lancé ${e.le.slice(0, 10)}  J+1 ${pct(r[0]).padStart(6)}  J+7 ${pct(r[1]).padStart(6)}` +
+        `  ${e.base.padEnd(10)} ${e.premier === "lancement" ? "lancé   " : "1er perp"} ${e.depart.slice(0, 10)}  J+1 ${pct(r[0]).padStart(6)}  J+7 ${pct(r[1]).padStart(6)}` +
           `  J+30 ${pct(r[2]).padStart(6)}  depuis ${pct(dernier.prix / p0.prix - 1).padStart(6)}` +
           `  fin. ${dernier.financement === null ? "—" : `${(dernier.financement * 100).toFixed(3)} %`}` +
           (dernier.oi > 0 ? `  OI ${(dernier.oi / 1e6).toFixed(1)} M$` : "") +

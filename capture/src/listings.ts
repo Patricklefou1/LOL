@@ -598,6 +598,16 @@ async function essai(): Promise<void> {
 // réputée ancienne (epoch 0) : elle peut masquer un vrai lancement des premiers
 // jours, mais jamais en inventer un. Une paire jamais ouverte n'a pas de date.
 // Les deux événements sont ensuite calculés par ticker, spot et perp séparés.
+// Actions et ETF que les bourses sans catégorie laissent passer : table
+// cex_exclus, noms CoinGecko des actions tokenisées, préfixe EQ des actions
+// tokenisées de rang 2 (EQAAPL, EQNVDA ; trois lettres au moins après EQ pour
+// épargner un token comme EQB).
+export const EXCLUSION_TRADFI = `
+  base NOT IN (SELECT base FROM cex_exclus FINAL)
+  AND base NOT IN (SELECT symbole FROM cg_tokens
+                   WHERE match(nom, '(?i)tokeni[sz]ed|bstocks|xstock'))
+  AND NOT match(base, '^EQ[A-Z]{3,}$')`;
+
 // `fin` borne la fenêtre : minuit pour les rapports par jour entier, plus tard
 // pour le suivi, qui inclut les lancements du jour.
 export const evenementsSql = (fin: string) => `
@@ -608,6 +618,7 @@ export const evenementsSql = (fin: string) => `
                 toDateTime(0),
                 coalesce(date_bourse, ouvert_le)) AS d
       FROM cex_paires FINAL
+      WHERE ${EXCLUSION_TRADFI}
     ),
     tickers AS (
       SELECT base,
@@ -684,9 +695,10 @@ export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = 
     }
     const mineurs = detail.length - majeurs.length;
     if (mineurs > 0) {
-      const noms = detail.filter((d) => Number(d.rang1) !== 1).map((d) => d.base);
+      // Un ticker peut porter deux événements, lancement et premier perp
+      const noms = [...new Set(detail.filter((d) => Number(d.rang1) !== 1).map((d) => d.base))];
       console.log(`
-Sur les bourses de rang 2 seulement (${mineurs}) : ${noms.join(", ")}`);
+Sur les bourses de rang 2 seulement (${noms.length}) : ${noms.join(", ")}`);
     }
     console.log("");
   }
@@ -718,33 +730,56 @@ Sur les bourses de rang 2 seulement (${mineurs}) : ${noms.join(", ")}`);
   }
   console.log(`moyenne/j   ${totaux.map((t) => (t / jours).toFixed(1).padStart(13)).join("")}`);
 
+  // dernier_ok : la source a-t-elle répondu à au moins un des trois derniers relevés
   const couverture = await (
     await ch.query({
       query: `
         SELECT bourse, marche,
                toString(min(releve_le)) AS depuis,
                countIf(erreur = '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS ok,
-               countIf(erreur != '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS echecs
+               countIf(erreur != '' AND releve_le >= now() - INTERVAL {jours:UInt32} DAY) AS echecs,
+               countIf(erreur = '' AND releve_le >= now() - INTERVAL 3 HOUR) > 0 AS dernier_ok,
+               argMaxIf(erreur, releve_le, erreur != '') AS derniere_erreur
         FROM cex_releves GROUP BY bourse, marche ORDER BY bourse, marche`,
       query_params: { jours },
       format: "JSONEachRow",
     })
-  ).json<{ bourse: string; marche: string; depuis: string; ok: string | number; echecs: string | number }>();
+  ).json<{
+    bourse: string;
+    marche: string;
+    depuis: string;
+    ok: string | number;
+    echecs: string | number;
+    dernier_ok: number;
+    derniere_erreur: string;
+  }>();
 
   const vues = new Set(couverture.map((c) => `${c.bourse} ${c.marche}`));
   const absentes = SOURCES.map(nomSource).filter((n) => !vues.has(n));
-  const enEchec = couverture.filter((c) => Number(c.echecs) > 0 || Number(c.ok) === 0);
+  // En panne : muette depuis trois heures, ou en échec plus d'une fois sur deux.
+  // Un échec isolé ne fait que dater une cotation une heure plus tard : il est
+  // signalé sans déclencher l'alerte.
+  const enPanne = couverture.filter(
+    (c) => Number(c.ok) === 0 || !Number(c.dernier_ok) || Number(c.echecs) > Number(c.ok),
+  );
+  const intermittentes = couverture.filter((c) => Number(c.echecs) > 0 && !enPanne.includes(c));
   const reussis = couverture.reduce((t, c) => t + Number(c.ok), 0);
   const depuis = couverture.map((c) => c.depuis).sort()[0] ?? "—";
 
   console.log(
-    `
-Couverture (${jours} j) : ${SOURCES.length - absentes.length - enEchec.length} sources sur ` +
-      `${SOURCES.length} sans échec, ${reussis} relevés réussis, relevé depuis ${depuis}`,
+    `\nCouverture (${jours} j) : ${SOURCES.length - absentes.length - enPanne.length} sources sur ` +
+      `${SOURCES.length} en service, ${reussis} relevés réussis, relevé depuis ${depuis}`,
   );
-  // Le format « N échecs » est celui que recap-listings.sh cherche pour l'alerte
-  for (const c of enEchec) {
-    console.log(`  ${c.bourse} ${c.marche} : ${c.echecs} échecs, ${c.ok} relevés réussis`);
+  // Le format « N échecs » est celui que recap-listings.sh cherche pour l'alerte :
+  // il est réservé aux pannes
+  for (const c of enPanne) {
+    console.log(`  ${c.bourse} ${c.marche} : ${c.echecs} échecs, ${c.ok} relevés réussis — ${c.derniere_erreur}`);
+  }
+  for (const c of intermittentes) {
+    console.log(
+      `  ${c.bourse} ${c.marche} : intermittente, ${c.echecs} relevés manqués sur ` +
+        `${Number(c.ok) + Number(c.echecs)} — ${c.derniere_erreur.slice(0, 120)}`,
+    );
   }
   for (const n of absentes) console.log(`  ${n} : jamais relevée`);
 }
