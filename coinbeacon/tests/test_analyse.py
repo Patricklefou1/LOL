@@ -4,6 +4,7 @@ Rien ici n'est un resultat : ces donnees ne servent qu'a verifier les calculs,
 la pagination et l'absence du jeton dans les sorties.
 """
 import csv
+import datetime as dt
 import gzip
 import json
 import math
@@ -83,8 +84,8 @@ class Handler(BaseHTTPRequestHandler):
             sym = q["symbol"]
             if sym not in SPOT:
                 return self._json({"code": -1121, "msg": "Invalid symbol."}, 400)
-            step = A.DAY_MS if q["interval"] == "1d" else A.MIN_MS
-            start, end = int(q["startTime"]), min(int(q["endTime"]), NOW)
+            step = {"1d": A.DAY_MS, "1h": A.HOUR_MS}.get(q["interval"], A.MIN_MS)
+            start, end = int(q["startTime"]), min(int(q.get("endTime", NOW)), NOW)
             t = (start + step - 1) // step * step
             rows = []
             while t <= end and len(rows) < int(q.get("limit", 500)):
@@ -356,3 +357,68 @@ def test_dry_vers_observations_puis_analyse(server, tmp_path, monkeypatch):
     # les breakout_retest vus 2 bougies apres declenchement sont ecartes (biais de survie)
     assert sum(v for k, v in st.items() if "biais de survie" in k) == sum(o["bars_a_la_premiere_vue"] == 2 for o in obs)
     assert st["inclus"] > 0
+
+
+# --------------------------------------------------------------------------- divergences
+
+import divergences as DV  # noqa: E402
+
+
+def test_rsi_et_pivots():
+    up = np.arange(1, 40, dtype=float)
+    assert DV.rsi_wilder(up)[20] == 100.0
+    x = np.array([5, 4, 3, 2, 1, 2, 3, 4, 5, 6, 7.0])
+    assert list(DV.pivots(x, 3, 3, "low")) == [4]
+    assert list(DV.pivots(-x, 3, 3, "high")) == [4]
+
+
+def test_classement_des_divergences(monkeypatch):
+    n = 40
+    t = np.arange(n, dtype=np.int64) * A.DAY_MS
+    lo = np.full(n, 10.0)
+    h = np.full(n, 20.0)
+    rsi = np.full(n, 50.0)
+    # creux de RSI en 10 et 20 : prix plus bas, RSI plus haut -> haussiere classique
+    rsi[10], rsi[20] = 30, 35
+    lo[10], lo[20] = 8, 7
+    # sommets de RSI en 25 et 33 : prix plus bas, RSI plus haut -> baissiere cachee
+    rsi[25], rsi[33] = 70, 75
+    h[25], h[33] = 25, 24
+    monkeypatch.setattr(DV, "rsi_wilder", lambda c, n=14: rsi)
+    args = DV.parse_args(["--gauche", "3", "--droite", "3", "--ecart-min", "3"])
+    divs = DV.find_divergences(t, h, lo, np.full(n, 15.0), "1d", args)
+    got = {(d["type"], d["dir"], d["pivot1_ms"] // A.DAY_MS, d["pivot2_ms"] // A.DAY_MS) for d in divs}
+    assert got == {("regular", "bull", 10, 20), ("hidden", "bear", 25, 33)}
+    bear = next(d for d in divs if d["dir"] == "bear")
+    assert bear["signal_ms"] == (33 + 3) * A.DAY_MS + A.DAY_MS  # cloture de la bougie de confirmation
+
+
+def test_semaines_au_lundi_et_mesure():
+    rows = [[T0 + k * A.HOUR_MS, 100.0 + k, 101.0 + k, 99.0 + k, 100.5 + k] for k in range(24 * 21)]
+    c = A.Candles(rows)
+    t, o, h, lo, cl = DV.resample(c, "1w")
+    assert all(dt.datetime.fromtimestamp(x / 1000, dt.timezone.utc).weekday() == 0 for x in t)
+    m = DV.Mesure(c, [4])
+    g, u, d = m.evaluate(np.array([10]), np.array([1]), 4)[:, 0]
+    assert g == pytest.approx((100.5 + 13) / (100 + 10) - 1)       # cloture de la 4e bougie 1 h
+    gs = m.evaluate(np.array([10]), np.array([-1]), 4)[0, 0]
+    assert gs == pytest.approx(-g)
+
+
+def test_cas_coinbeacon():
+    cas = DV.parse_cas("https://app.coinbeacon.io/detectors/divergences?div=binance%7CPENGUUSDT%7C1w%7Crsi%7Chidden"
+                       "%7Cbear%7C1777852800000%7C1789948800000")
+    assert cas == {"symbol": "PENGUUSDT", "tf": "1w", "type": "hidden", "dir": "bear",
+                   "pivot1_ms": 1777852800000, "pivot2_ms": 1789948800000}
+
+
+def test_divergences_bout_en_bout(server, tmp_path):
+    assert DV.main(["--binance-base", server, "--paires", "BTCUSDT", "ETHUSDT", "--timeframes", "1h", "4h",
+                    "--depuis", "2026-01-05", "--cache-dir", str(tmp_path / "c"), "--out-dir", str(tmp_path / "o"),
+                    "--bootstrap", "200", "--fenetre-jours", "5"]) == 0
+    rows = list(csv.DictReader(open(tmp_path / "o" / "divergences.csv", encoding="utf-8")))
+    inc = [r for r in rows if r["statut"] == "inclus"]
+    assert inc
+    for r in inc:
+        assert r["signal_utc"] > r["pivot2_utc"] > r["pivot1_utc"]
+    assert "Horizon 24 h" in (tmp_path / "o" / "rapport.md").read_text(encoding="utf-8")
