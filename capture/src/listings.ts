@@ -2,6 +2,8 @@ import { createClient, ClickHouseClient } from "@clickhouse/client";
 import { config } from "./config";
 import { essaiCoingecko, rapportCoingecko, releverCoingecko } from "./coingecko";
 import { rapportSuivi, releverSuivi } from "./suivi";
+import { essaiAnnonces, rapportAnnonces, releverAnnonces } from "./annonces";
+import { alerter, essaiTelegram } from "./alertes";
 import { sleep } from "./util";
 
 // Relevé des cotations spot et perps sur Binance, Coinbase, OKX, Bybit, Hyperliquid,
@@ -74,7 +76,8 @@ async function getJson(url: string): Promise<any> {
   const reponse = await fetch(url, {
     // Coinbase refuse les requêtes sans User-Agent
     headers: { "user-agent": "pumpfun-capture/listings", accept: "application/json" },
-    signal: AbortSignal.timeout(30_000),
+    // 60 s : Coinbase International échouait un relevé sur trois à 30 s
+    signal: AbortSignal.timeout(60_000),
   });
   if (!reponse.ok) throw new Error(`HTTP ${reponse.status} sur ${url}`);
   return reponse.json();
@@ -362,7 +365,9 @@ export const SOURCES: Source[] = [
         quote: "USDC",
         actif: u.isDelisted !== true,
         dateBourse: null,
-        premarche: false,
+        // Les hyperps (pré-marché d'Hyperliquid) sont limités à ×3 en marge
+        // isolée ; l'API ne les nomme pas. Heuristique à confirmer sur un cas réel.
+        premarche: u.onlyIsolated === true && Number(u.maxLeverage) <= 3,
       }));
     },
   },
@@ -512,7 +517,7 @@ export async function releverSource(ch: ClickHouseClient, source: Source, mainte
         initiale: premier ? 1 : 0,
         premarche: p.premarche ? 1 : 0,
       });
-    } else if (connue.ouvert_le === null && p.actif) {
+    } else if ((connue.ouvert_le === null && p.actif) || (p.premarche && !Number(connue.premarche))) {
       // Paire annoncée lors d'un relevé précédent, échangeable depuis celui-ci.
       // Le drapeau pré-marché est conservé : c'est ainsi qu'elle a démarré.
       aEcrire.push({
@@ -522,10 +527,11 @@ export async function releverSource(ch: ClickHouseClient, source: Source, mainte
         base: p.base,
         quote: p.quote,
         vu_le: connue.vu_le,
-        ouvert_le: maintenantCh,
+        ouvert_le: connue.ouvert_le ?? (p.actif ? maintenantCh : null),
         date_bourse: connue.date_bourse,
         initiale: connue.initiale,
-        premarche: connue.premarche,
+        // Un contrat repéré en pré-marché après coup (heuristique des hyperps)
+        premarche: Number(connue.premarche) || (p.premarche ? 1 : 0),
       });
     }
   }
@@ -643,6 +649,14 @@ export const evenementsSql = (fin: string) => `
              bourses_spot, bourses_perp
       FROM tickers
       WHERE spot_d IS NOT NULL AND perp_d > spot_d
+      UNION ALL
+      -- Token né en pré-marché (hyperp, pré-marché OKX ou Bybit) qui arrive en
+      -- spot : souvent le moment le plus volatil, invisible sans cet événement
+      SELECT 'sortie pré-marché' AS evenement, base, spot_d AS le,
+             0 AS par_perp, 1 AS premarche,
+             bourses_spot, bourses_perp
+      FROM tickers
+      WHERE perp_premarche = 1 AND perp_d IS NOT NULL AND spot_d > perp_d
     )
   SELECT * FROM evenements
   WHERE le >= toStartOfDay(now()) - INTERVAL {jours:UInt32} DAY
@@ -687,7 +701,9 @@ export async function rapport(ch: ClickHouseClient, jours: number, avecDetail = 
       const quoi =
         d.evenement === "lancement"
           ? `lancement${Number(d.par_perp) ? " par perp" : ""}${Number(d.premarche) ? " (pré-marché)" : ""}`
-          : `premier perp${Number(d.premarche) ? " (pré-marché)" : ""}`;
+          : d.evenement === "premier perp"
+            ? `premier perp${Number(d.premarche) ? " (pré-marché)" : ""}`
+            : d.evenement;
       console.log(
         `  ${d.le.slice(0, 16)}  ${d.base.padEnd(12)} ${quoi.padEnd(32)} ` +
           `spot : ${d.bourses_spot.join(", ") || "—"} | perp : ${d.bourses_perp.join(", ") || "—"}`,
@@ -712,7 +728,8 @@ Sur les bourses de rang 2 seulement (${noms.length}) : ${noms.join(", ")}`);
                countIf(evenement = 'lancement' AND premarche) AS premarche,
                countIf(evenement = 'lancement' AND ${estRang1}) AS rang1,
                countIf(evenement = 'premier perp') AS premiers_perps,
-               countIf(evenement = 'premier perp' AND ${perpRang1}) AS perps_rang1
+               countIf(evenement = 'premier perp' AND ${perpRang1}) AS perps_rang1,
+               countIf(evenement = 'sortie pré-marché') AS sorties_pm
         FROM (${EVENEMENTS})
         GROUP BY jour ORDER BY jour`,
       query_params: { jours },
@@ -720,8 +737,8 @@ Sur les bourses de rang 2 seulement (${noms.length}) : ${noms.join(", ")}`);
     })
   ).json<Record<string, string | number>>();
 
-  const colonnes = ["lancements", "par_perp", "premarche", "rang1", "premiers_perps", "perps_rang1"];
-  const entetes = ["lancements", "dont perp", "pré-marché", "rang 1", "1ers perps", "perps rang 1"];
+  const colonnes = ["lancements", "par_perp", "premarche", "rang1", "premiers_perps", "perps_rang1", "sorties_pm"];
+  const entetes = ["lancements", "dont perp", "pré-marché", "rang 1", "1ers perps", "perps rang 1", "sorties PM"];
   console.log(`jour        ${entetes.map((e) => e.padStart(13)).join("")}`);
   const totaux = colonnes.map(() => 0);
   for (const l of parJour) {
@@ -786,7 +803,7 @@ Sur les bourses de rang 2 seulement (${noms.length}) : ${noms.join(", ")}`);
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.includes("--essai")) return essai().then(essaiCoingecko);
+  if (args.includes("--essai")) return essai().then(essaiCoingecko).then(essaiAnnonces).then(essaiTelegram);
 
   const ch = createClient({
     url: config.clickhouse.url,
@@ -802,6 +819,7 @@ async function main(): Promise<void> {
     const jours = Number(args[iRapport + 1] ?? 15) || 15;
     await rapport(ch, jours, !args.includes("--sans-detail"));
     await rapportCoingecko(ch, jours, !args.includes("--sans-detail"));
+    if (!args.includes("--sans-detail")) await rapportAnnonces(ch, jours);
   } else {
     // Même horodatage pour toutes les sources : un relevé est un instant
     const maintenant = Date.now();
@@ -809,6 +827,9 @@ async function main(): Promise<void> {
     await releverCoingecko(ch, maintenant);
     // Après les sources : un lancement détecté à ce relevé est suivi dès maintenant
     await releverSuivi(ch, maintenant);
+    const annonces = await releverAnnonces(ch, maintenant);
+    // En dernier : les événements de ce relevé sont en base
+    await alerter(ch, annonces);
   }
   await ch.close();
 }

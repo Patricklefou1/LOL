@@ -1,5 +1,6 @@
 import { ClickHouseClient } from "@clickhouse/client";
 import { evenementsSql, SOURCES } from "./listings";
+import { releverTokenomics } from "./coingecko";
 
 // Suivi des tokens lancés : prix, financement, intérêt ouvert et volume relevés
 // chaque heure pendant 35 jours, pour mesurer ce que deviennent les lancements
@@ -9,7 +10,9 @@ import { evenementsSql, SOURCES } from "./listings";
 // contrats d'un coup : le coût ne dépend pas du nombre de tokens suivis.
 
 const DUREE_JOURS = 35;
-const HORIZONS = [1, 7, 30];
+const HORIZONS = [1, 3, 7, 30];
+// Référence de marché : les rendements sont aussi donnés nets de la variation de BTC
+const MARCHE = "BTC";
 // Seules les paires en dollars donnent un prix comparable entre bourses
 const QUOTES_DOLLAR = ["USDT", "USDC", "USD", "FDUSD"];
 
@@ -231,11 +234,17 @@ async function tokensSuivis(ch: ClickHouseClient): Promise<{ base: string; le: s
 }
 
 export async function releverSuivi(ch: ClickHouseClient, maintenant: number): Promise<void> {
-  const suivis = await tokensSuivis(ch);
-  if (suivis.length === 0) {
+  const lances = await tokensSuivis(ch);
+  if (lances.length === 0) {
     console.log("[listings] suivi : aucun lancement de moins de 35 jours");
     return;
   }
+  await releverTokenomics(
+    ch,
+    lances.map((s) => s.base),
+    maintenant,
+  );
+  const suivis = [...lances, { base: MARCHE, le: "" }];
 
   // Symbole de chaque paire en dollars des tokens suivis, par bourse et marché
   const paires = await (
@@ -278,7 +287,7 @@ export async function releverSuivi(ch: ClickHouseClient, maintenant: number): Pr
     await ch.insert({ table: "suivi_lancements", values: lignes, format: "JSONEachRow" });
   }
   console.log(
-    `[listings] suivi : ${suivis.length} tokens, ${lignes.length} cotations relevées` +
+    `[listings] suivi : ${lances.length} tokens, ${lignes.length} cotations relevées` +
       (echecs ? `, ${echecs} sources en échec` : ""),
   );
 }
@@ -291,8 +300,10 @@ const mediane = (xs: number[]) => {
   return t.length % 2 ? t[m] : (t[m - 1] + t[m]) / 2;
 };
 
-// Rendement de chaque lancement à J+1, J+7, J+30 et maintenant, à partir du prix
-// médian toutes bourses confondues de chaque relevé horaire.
+// Rendement de chaque lancement à J+1, J+3, J+7, J+30 et maintenant, brut et net
+// de BTC, à partir du prix médian toutes bourses confondues de chaque relevé
+// horaire ; plus haut et plus bas atteints ; flottant et FDV / capitalisation
+// au premier relevé de tokenomics.
 export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
   const rang1 = (marche: string) =>
     SOURCES.filter((s) => s.rang === 1 && s.marche === marche)
@@ -312,6 +323,7 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
     })
   ).json<{ base: string; depart: string; premier: string; rang1: number }>();
   if (evenements.length === 0) return;
+  const bases = evenements.map((e) => e.base);
 
   const releves = await (
     await ch.query({
@@ -321,10 +333,29 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
               FROM suivi_lancements
               WHERE base IN {bases:Array(String)}
               GROUP BY base, releve_le ORDER BY base, releve_le`,
-      query_params: { bases: evenements.map((e) => e.base) },
+      query_params: { bases: [...bases, MARCHE] },
       format: "JSONEachRow",
     })
   ).json<{ base: string; t: number | string; prix: number; financement: number | null; oi: number }>();
+
+  const tokenomics = await (
+    await ch.query({
+      // Premier relevé à capitalisation connue : la tokenomics au lancement
+      query: `SELECT base, argMin(t.mcap, t.releve_le) AS mcap0, argMin(t.fdv, t.releve_le) AS fdv0,
+                     argMin(t.circulant, t.releve_le) AS circulant0, argMin(t.total, t.releve_le) AS total0
+              FROM suivi_tokenomics AS t WHERE t.base IN {bases:Array(String)} AND t.mcap > 0
+              GROUP BY base`,
+      query_params: { bases },
+      format: "JSONEachRow",
+    })
+  ).json<{ base: string; mcap0: number; fdv0: number; circulant0: number; total0: number }>();
+  const tokDe = new Map(
+    tokenomics.map((t) => [t.base, { mcap: t.mcap0, fdv: t.fdv0, circulant: t.circulant0, total: t.total0 }]),
+  );
+  const flottantDe = (base: string): number | null => {
+    const t = tokDe.get(base);
+    return t && Number(t.total) > 0 ? Number(t.circulant) / Number(t.total) : null;
+  };
 
   const parBase = new Map<string, { t: number; prix: number; financement: number | null; oi: number }[]>();
   for (const r of releves) {
@@ -332,9 +363,15 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
     liste.push({ t: Number(r.t) * 1000, prix: Number(r.prix), financement: r.financement, oi: Number(r.oi) });
     parBase.set(r.base, liste);
   }
+  const btc = new Map((parBase.get(MARCHE) ?? []).map((s) => [s.t, s.prix]));
 
-  const rendements: Record<string, number[]> = { "1": [], "7": [], "30": [] };
+  // Médianes par horizon : toutes, puis séparées par flottant (< 20 % ou non)
+  type Stat = { brut: number[]; net: number[] };
+  const nouvelle = (): Record<number, Stat> =>
+    Object.fromEntries(HORIZONS.map((j) => [j, { brut: [], net: [] }])) as Record<number, Stat>;
+  const stats = { tous: nouvelle(), faible: nouvelle(), large: nouvelle() };
   const lignes: string[] = [];
+
   for (const e of evenements) {
     const serie = parBase.get(e.base);
     if (!serie?.length) continue;
@@ -343,35 +380,66 @@ export async function rapportSuivi(ch: ClickHouseClient): Promise<void> {
     // Un premier relevé plus de 6 h après le lancement manque le départ :
     // le rendement part du premier prix connu, pas du prix de lancement
     const partiel = p0.t - t0 > 6 * 3600e3;
-    const aHorizon = (j: number) => serie.find((s) => s.t >= t0 + j * 86400e3) ?? null;
+    const btc0 = btc.get(p0.t);
+    const mesure = (s: { t: number; prix: number }) => {
+      const brut = s.prix / p0.prix - 1;
+      const b = btc.get(s.t);
+      return { brut, net: btc0 && b ? (1 + brut) / (b / btc0) - 1 : null };
+    };
     const r = HORIZONS.map((j) => {
-      const s = aHorizon(j);
-      return s ? s.prix / p0.prix - 1 : null;
+      const s = serie.find((x) => x.t >= t0 + j * 86400e3);
+      return s ? mesure(s) : null;
     });
-    if (Number(e.rang1) === 1 && !partiel) {
-      HORIZONS.forEach((j, i) => r[i] !== null && rendements[String(j)].push(r[i]!));
-    }
     const dernier = serie[serie.length - 1];
-    if (Number(e.rang1) === 1) {
-      lignes.push(
-        `  ${e.base.padEnd(10)} ${e.premier === "lancement" ? "lancé   " : "1er perp"} ${e.depart.slice(0, 10)}  J+1 ${pct(r[0]).padStart(6)}  J+7 ${pct(r[1]).padStart(6)}` +
-          `  J+30 ${pct(r[2]).padStart(6)}  depuis ${pct(dernier.prix / p0.prix - 1).padStart(6)}` +
-          `  fin. ${dernier.financement === null ? "—" : `${(dernier.financement * 100).toFixed(3)} %`}` +
-          (dernier.oi > 0 ? `  OI ${(dernier.oi / 1e6).toFixed(1)} M$` : "") +
-          (partiel ? "  (départ manqué)" : ""),
-      );
-    }
-  }
+    const depuis = mesure(dernier);
+    const haut = Math.max(...serie.map((s) => s.prix)) / p0.prix - 1;
+    const bas = Math.min(...serie.map((s) => s.prix)) / p0.prix - 1;
+    const flottant = flottantDe(e.base);
+    const tok = tokDe.get(e.base);
 
-  console.log(`\nSuivi des lancements de rang 1 (35 derniers jours) :`);
-  for (const j of HORIZONS) {
-    const xs = rendements[String(j)];
-    if (xs.length === 0) continue;
-    const baisses = xs.filter((x) => x < 0).length;
-    console.log(
-      `  J+${j} : médiane ${pct(mediane(xs))} sur ${xs.length} tokens, ` +
-        `${Math.round((baisses / xs.length) * 100)} % en baisse`,
+    if (Number(e.rang1) !== 1) continue;
+    if (!partiel) {
+      const cohortes = [stats.tous, ...(flottant === null ? [] : [flottant < 0.2 ? stats.faible : stats.large])];
+      HORIZONS.forEach((j, i) => {
+        const x = r[i];
+        if (!x) return;
+        for (const c of cohortes) {
+          c[j].brut.push(x.brut);
+          if (x.net !== null) c[j].net.push(x.net);
+        }
+      });
+    }
+    const fmt = (x: { brut: number; net: number | null } | null) =>
+      x ? `${pct(x.brut)}${x.net === null ? "" : ` (${pct(x.net)})`}` : "—";
+    lignes.push(
+      `  ${e.base.padEnd(10)} ${e.premier === "lancement" ? "lancé" : e.premier} ${e.depart.slice(0, 10)}` +
+        (flottant === null ? "" : `  flottant ${Math.round(flottant * 100)} %`) +
+        (tok && Number(tok.mcap) > 0 && Number(tok.fdv) > 0
+          ? `  FDV/mcap ${(Number(tok.fdv) / Number(tok.mcap)).toFixed(1)}`
+          : "") +
+        (partiel ? "  (départ manqué)" : "") +
+        `\n      ${HORIZONS.map((j, i) => `J+${j} ${fmt(r[i])}`).join("  ")}  depuis ${fmt(depuis)}` +
+        `\n      haut ${pct(haut)}  bas ${pct(bas)}` +
+        `  fin. ${dernier.financement === null ? "—" : `${(dernier.financement * 100).toFixed(3)} %`}` +
+        (dernier.oi > 0 ? `  OI ${(dernier.oi / 1e6).toFixed(1)} M$` : ""),
     );
   }
+
+  const resume = (titre: string, c: Record<number, Stat>) => {
+    const parties = HORIZONS.filter((j) => c[j].brut.length > 0).map((j) => {
+      const xs = c[j].brut;
+      const baisses = xs.filter((x) => x < 0).length;
+      const net = mediane(c[j].net);
+      return (
+        `J+${j} ${pct(mediane(xs))}${net === null ? "" : ` (${pct(net)})`} ` +
+        `n=${xs.length} ${Math.round((baisses / xs.length) * 100)} % en baisse`
+      );
+    });
+    if (parties.length) console.log(`  ${titre.padEnd(16)} ${parties.join(" | ")}`);
+  };
+  console.log(`\nSuivi des lancements de rang 1 (35 derniers jours) — médianes, entre parenthèses nettes de BTC :`);
+  resume("tous", stats.tous);
+  resume("flottant < 20 %", stats.faible);
+  resume("flottant ≥ 20 %", stats.large);
   for (const l of lignes) console.log(l);
 }

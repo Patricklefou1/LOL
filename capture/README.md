@@ -365,6 +365,22 @@ npm run listings -- --rapport 15  # événements par jour sur 15 jours, et leur 
   est refusé et journalisé dans `cex_releves`. Le rapport affiche les relevés
   réussis et échoués par source.
 
+#### Annonces, alertes, pré-marché et tokenomics
+
+- **Annonces de listing** de Binance, OKX et Bybit, lues chaque heure par leurs API
+  publiques : elles précèdent souvent l'ouverture de plusieurs heures. Listées
+  dans le mail, avec leur lien.
+- **Alertes Telegram** (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) : chaque annonce
+  nouvelle et chaque événement de rang 1 des 12 dernières heures, une seule fois
+  (table `alertes_envoyees`). `npm run listings -- --essai` envoie un message de test.
+- **Sortie de pré-marché** : un token né en pré-marché qui arrive en spot. Les
+  hyperps d'Hyperliquid sont repérés par heuristique (×3 maximum, marge isolée
+  seule) : à confirmer sur un cas réel.
+- **Tokenomics** : flottant et FDV / capitalisation lus sur CoinGecko pour chaque
+  token suivi. Le suivi donne les rendements bruts et nets de BTC à J+1, J+3, J+7,
+  J+30, le plus haut et le plus bas depuis le lancement, et sépare les médianes
+  selon le flottant, au-dessous ou au-dessus de 20 %.
+
 #### Actions et ETF exclus
 
 Binance spot, MEXC spot et Hyperliquid cotent des actions tokenisées sans les

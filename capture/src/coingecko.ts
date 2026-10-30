@@ -245,3 +245,50 @@ export async function rapportCoingecko(ch: ClickHouseClient, jours: number, avec
   if (cle() && Number(ok) === 0) console.log(`  coingecko : jamais relevée`);
   if (Number(echecs) > 0) console.log(`  coingecko : ${echecs} échecs, ${ok} relevés réussis`);
 }
+
+// Tokenomics des tokens suivis : offre en circulation, offre totale, FDV. Un
+// ticker peut désigner plusieurs identifiants CoinGecko ; on retient celui à la
+// plus forte capitalisation, le plus souvent celui que cotent les bourses.
+export async function releverTokenomics(ch: ClickHouseClient, bases: string[], maintenant: number): Promise<void> {
+  if (!cle() || bases.length === 0) return;
+  const candidats = await (
+    await ch.query({
+      query: `SELECT id, symbole FROM cg_tokens FINAL WHERE symbole IN {bases:Array(String)} LIMIT 250`,
+      query_params: { bases },
+      format: "JSONEachRow",
+    })
+  ).json<{ id: string; symbole: string }>();
+  if (candidats.length === 0) return;
+
+  let marches: any[];
+  try {
+    marches = await cg(
+      `/coins/markets?vs_currency=usd&per_page=250&ids=${encodeURIComponent(candidats.map((c) => c.id).join(","))}`,
+    );
+  } catch (err) {
+    console.error(`[listings] tokenomics : ${err}`);
+    return;
+  }
+  const symboleDe = new Map(candidats.map((c) => [c.id, c.symbole]));
+  const meilleur = new Map<string, any>();
+  for (const m of marches) {
+    const base = symboleDe.get(m.id);
+    if (!base) continue;
+    const deja = meilleur.get(base);
+    if (!deja || (Number(m.market_cap) || 0) > (Number(deja.market_cap) || 0)) meilleur.set(base, m);
+  }
+  const lignes = [...meilleur.entries()].map(([base, m]) => ({
+    base,
+    releve_le: chDate(maintenant),
+    cg_id: m.id,
+    prix: Number(m.current_price) || 0,
+    mcap: Number(m.market_cap) || 0,
+    fdv: Number(m.fully_diluted_valuation) || 0,
+    circulant: Number(m.circulating_supply) || 0,
+    // sans offre totale, l'offre maximale ; sans les deux, inconnue (0)
+    total: Number(m.total_supply) || Number(m.max_supply) || 0,
+  }));
+  if (lignes.length > 0) {
+    await ch.insert({ table: "suivi_tokenomics", values: lignes, format: "JSONEachRow" });
+  }
+}
