@@ -68,6 +68,14 @@ const SOURCES_ANNONCES: { bourse: string; lire: () => Promise<Annonce[]> }[] = [
   },
 ];
 
+// Seules les annonces d'un nouveau token crypto comptent : pas les actions et ETF
+// (« TradFi Perpetual », xStocks), ni les migrations, retraits, changements de nom
+// ou simples ajouts de paires sur un token déjà coté.
+const LISTING = /\b(list|lists|listing|listed|launch|launches|launchpool|hodler|airdrop|pre-?market)\b/i;
+const HORS_SUJET =
+  /\b(delist|delisting|delisted|tradfi|stocks?|xstocks?|bstocks|equit(y|ies)|etf|migration|rebrand|renam|maintenance|suspend|convert)/i;
+export const estListingCrypto = (titre: string) => LISTING.test(titre) && !HORS_SUJET.test(titre);
+
 // « Binance Will List Extended (XTEN) », « … XTENUSDT Perpetual … » : les
 // tickers sont entre parenthèses ou collés à USDT/USDC
 export function tickersDuTitre(titre: string): string[] {
@@ -117,7 +125,7 @@ export async function releverAnnonces(ch: ClickHouseClient, maintenant: number):
       })),
       format: "JSONEachRow",
     });
-    if (!premier) nouvelles.push(...inedites);
+    if (!premier) nouvelles.push(...inedites.filter((a) => estListingCrypto(a.titre)));
     console.log(`[listings] annonces ${source.bourse} : ${premier ? "référence" : `${inedites.length} nouvelles`}`);
   }
   return nouvelles;
@@ -130,7 +138,11 @@ export async function essaiAnnonces(): Promise<void> {
       const derniere = annonces[0];
       console.log(
         `annonces ${source.bourse.padEnd(8)} ${annonces.length} lues` +
-          (derniere ? ` — dernière : ${derniere.titre.slice(0, 70)} [${tickersDuTitre(derniere.titre).join(", ")}]` : ""),
+          `, ${annonces.filter((a) => estListingCrypto(a.titre)).length} listings crypto` +
+          (derniere
+            ? ` — dernière : ${derniere.titre.slice(0, 70)} [${tickersDuTitre(derniere.titre).join(", ")}]` +
+              (estListingCrypto(derniere.titre) ? "" : " (ignorée)")
+            : ""),
       );
     } catch (err) {
       console.log(`annonces ${source.bourse.padEnd(8)} ÉCHEC : ${err}`);
@@ -149,8 +161,12 @@ export async function rapportAnnonces(ch: ClickHouseClient, jours: number): Prom
       format: "JSONEachRow",
     })
   ).json<{ bourse: string; titre: string; url: string; publie: string }>();
-  console.log(`\nAnnonces de listing (${jours} j) : ${annonces.length}`);
-  for (const a of annonces) {
+  const listings = annonces.filter((a) => estListingCrypto(a.titre));
+  console.log(
+    `\nAnnonces de listing (${jours} j) : ${listings.length}` +
+      (annonces.length > listings.length ? `, ${annonces.length - listings.length} autres annonces ignorées` : ""),
+  );
+  for (const a of listings) {
     console.log(`  ${a.publie.slice(0, 16)}  ${a.bourse.padEnd(8)} ${a.titre}\n      ${a.url}`);
   }
 }
